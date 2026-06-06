@@ -14,7 +14,6 @@ import makeWASocket, {
   useMultiFileAuthState,
   proto,
 } from '@whiskeysockets/baileys';
-import { makeInMemoryStore } from '@whiskeysockets/baileys/lib/Store';
 import type { Chat, Contact as BaileysContact } from '@whiskeysockets/baileys/lib/Types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -40,10 +39,43 @@ interface MessageHandleOptions {
   skipMonitoredCheck?: boolean;
 }
 
+// Stub minimal del store que makeInMemoryStore proveía en Baileys 6.x.
+// 7.x lo eliminó. Para el flujo en vivo no lo necesitamos; el backfill
+// histórico queda como no-op (los mensajes nuevos llegan igual por
+// messages.upsert).
+interface MinimalChatStore {
+  all(): Chat[];
+}
+interface MinimalMessageList {
+  toJSON(): proto.IWebMessageInfo[];
+}
+interface MinimalStore {
+  chats: MinimalChatStore;
+  messages: Record<string, MinimalMessageList | undefined>;
+  loadMessage(
+    jid: string,
+    id: string,
+  ): Promise<proto.IWebMessageInfo | undefined>;
+  bind(ev: WASocket['ev']): void;
+  readFromFile(path: string): void;
+  writeToFile(path: string): void;
+}
+
+function createNoopStore(): MinimalStore {
+  return {
+    chats: { all: () => [] },
+    messages: {},
+    loadMessage: async () => undefined,
+    bind: () => undefined,
+    readFromFile: () => undefined,
+    writeToFile: () => undefined,
+  };
+}
+
 interface ActiveSession {
   socket: WASocket;
   deviceId: string;
-  store: ReturnType<typeof makeInMemoryStore>;
+  store: MinimalStore;
   storeInterval?: ReturnType<typeof setInterval>;
   persistStoreFile?: () => void;
   historyBackfillDone?: boolean;
@@ -189,7 +221,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    const store = makeInMemoryStore({});
+    const store = createNoopStore();
     const storePath = path.join(device.sessionPath, 'store.json');
 
     if (fs.existsSync(storePath)) {
@@ -286,6 +318,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     });
 
     socket.ev.on('messages.upsert', ({ messages, type }) => {
+      this.logger.log(
+        `messages.upsert device=${deviceId} type=${type} count=${messages.length} jids=${messages
+          .map((m) => m.key?.remoteJid)
+          .filter(Boolean)
+          .join(',')}`,
+      );
       if (type !== 'notify' && type !== 'append') {
         return;
       }
@@ -702,11 +740,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     let total = 0;
 
     for (const chat of chats) {
-      if (!this.isGroupJid(chat.id)) {
+      const chatId = chat.id;
+      if (!chatId || !this.isGroupJid(chatId)) {
         continue;
       }
 
-      const msgList = session.store.messages[chat.id];
+      const msgList = session.store.messages[chatId];
       if (!msgList) {
         continue;
       }
@@ -745,10 +784,12 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
       const jid = msg.key.remoteJid;
       if (this.shouldIgnoreJid(jid)) {
+        this.logger.log(`Ignorado jid=${jid} (shouldIgnoreJid)`);
         return;
       }
 
       if (!this.isGroupJid(jid)) {
+        this.logger.log(`Ignorado jid=${jid} (no es grupo @g.us)`);
         return;
       }
 
@@ -853,7 +894,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     const trimmed = text.trim();
     if (!LINK_CODE_RE.test(trimmed)) return false;
 
-    const participantJid = msg.key.participant ?? undefined;
+    const participantJid = msg.key?.participant ?? undefined;
     if (!participantJid) return false;
     const phone = parsePhoneFromJid(participantJid);
     if (!phone) return false;

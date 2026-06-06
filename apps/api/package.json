@@ -25,7 +25,7 @@
     "@nestjs/serve-static": "^4.0.2",
     "@nestjs/websockets": "^10.4.15",
     "@prisma/client": "^6.1.0",
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "7.0.0-rc13",
     "@ws-spy/shared": "workspace:*",
     "bcryptjs": "^3.0.3",
     "class-transformer": "^0.5.1",
