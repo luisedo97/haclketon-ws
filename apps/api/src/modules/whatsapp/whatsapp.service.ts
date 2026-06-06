@@ -56,6 +56,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private readonly reconnectAttempts = new Map<string, number>();
   private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly sessionsPath: string;
+  private readonly enforceAllowlist: boolean;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -70,6 +71,18 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       this.configService.get<string>('SESSIONS_PATH') ?? './sessions';
     if (!fs.existsSync(this.sessionsPath)) {
       fs.mkdirSync(this.sessionsPath, { recursive: true });
+    }
+    // F07S03: allowlist de grupos monitoreados. Por default activa (privacidad);
+    // se puede apagar con ENFORCE_GROUP_ALLOWLIST=false para testing/demo.
+    const raw = this.configService
+      .get<string>('ENFORCE_GROUP_ALLOWLIST')
+      ?.trim()
+      .toLowerCase();
+    this.enforceAllowlist = raw !== 'false' && raw !== '0';
+    if (!this.enforceAllowlist) {
+      this.logger.warn(
+        'ENFORCE_GROUP_ALLOWLIST=false → la allowlist de grupos NO se aplica (modo testing).',
+      );
     }
   }
 
@@ -749,7 +762,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      if (!skipMonitoredCheck) {
+      if (!skipMonitoredCheck && this.enforceAllowlist) {
         const allowed = await this.monitoredGroupsService.isMonitored(
           deviceId,
           jid,

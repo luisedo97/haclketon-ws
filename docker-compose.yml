@@ -68,6 +68,8 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       LINK_CODE_TTL_MIN: ${LINK_CODE_TTL_MIN:-15}
       SESSIONS_PATH: ${SESSIONS_PATH:-/data/sessions}
+      # F07S03: poner en `false` para destrabar testing sin agregar grupos a la allowlist.
+      ENFORCE_GROUP_ALLOWLIST: ${ENFORCE_GROUP_ALLOWLIST:-true}
     ports:
       - '${API_PORT:-3000}:3000'
     volumes:
