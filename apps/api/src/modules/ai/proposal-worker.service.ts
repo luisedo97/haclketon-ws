@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  ProposalStatus as PrismaProposalStatus,
   QueueStatus as PrismaQueueStatus,
 } from '@prisma/client';
 import {
   ProposalLlmOutputSchema,
   formatConversationTitle,
+  parsePhoneFromJid,
 } from '@ws-spy/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
@@ -186,6 +188,15 @@ export class ProposalWorkerService implements OnModuleInit, OnModuleDestroy {
 
       if (parsed.es_tarea && parsed.titulo.trim().length > 0) {
         const fechaLimite = parseFechaLimite(parsed.fecha_limite);
+        const { creatorUserId, matchedAssigneeUserId } =
+          await this.resolveCreatorAndAssignee(
+            item.message.senderJid,
+            parsed.responsable_probable,
+          );
+        const status = creatorUserId
+          ? PrismaProposalStatus.PENDIENTE
+          : PrismaProposalStatus.RETENIDA;
+
         const proposal = await this.proposalsService.create({
           sourceMessageId: item.messageId,
           conversationId: item.message.conversationId,
@@ -197,6 +208,9 @@ export class ProposalWorkerService implements OnModuleInit, OnModuleDestroy {
           confianza: parsed.confianza,
           modelUsed: this.ollamaService.getModel(),
           rawOutput: parsed as unknown as object,
+          status,
+          creatorUserId,
+          matchedAssigneeUserId,
         });
         this.counters.proposalsCreated += 1;
         this.eventsGateway.emitProposalCreated({
@@ -204,6 +218,7 @@ export class ProposalWorkerService implements OnModuleInit, OnModuleDestroy {
           conversationId: proposal.conversationId,
           categoria: proposal.categoria,
           confianza: proposal.confianza,
+          creatorUserId: proposal.creatorUserId,
         });
       }
 
@@ -223,6 +238,51 @@ export class ProposalWorkerService implements OnModuleInit, OnModuleDestroy {
       this.counters.totalLatencyMs += Date.now() - startedAt;
       this.maybeFlushMetrics();
     }
+  }
+
+  private async resolveCreatorAndAssignee(
+    senderJid: string | null,
+    responsableProbable: string | null,
+  ): Promise<{
+    creatorUserId: string | null;
+    matchedAssigneeUserId: string | null;
+  }> {
+    const creatorUserId = await this.matchUserByJid(senderJid);
+    const matchedAssigneeUserId = await this.matchUserByName(
+      responsableProbable,
+    );
+    return { creatorUserId, matchedAssigneeUserId };
+  }
+
+  private async matchUserByJid(jid: string | null): Promise<string | null> {
+    if (!jid) return null;
+    const phone = parsePhoneFromJid(jid);
+    if (!phone) return null;
+    const user = await this.prisma.user.findUnique({
+      where: { phoneE164: phone },
+      select: { id: true },
+    });
+    return user?.id ?? null;
+  }
+
+  private async matchUserByName(
+    nameHint: string | null,
+  ): Promise<string | null> {
+    if (!nameHint) return null;
+    const normalized = normalize(nameHint);
+    if (!normalized) return null;
+    const candidates = await this.prisma.user.findMany({
+      select: { id: true, displayName: true },
+    });
+    const matches = candidates.filter((c) => {
+      const n = normalize(c.displayName);
+      return (
+        n === normalized ||
+        n.split(' ').includes(normalized) ||
+        normalized.split(' ').includes(n.split(' ')[0] ?? '')
+      );
+    });
+    return matches.length === 1 ? matches[0].id : null;
   }
 
   private async loadContext(
@@ -354,6 +414,16 @@ export class ProposalWorkerService implements OnModuleInit, OnModuleDestroy {
         `errors=${c.errors} invalid_json=${c.invalidJson} avg_latency=${avgMs}ms`,
     );
   }
+}
+
+function normalize(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function parseFechaLimite(raw: string | null): Date | null {

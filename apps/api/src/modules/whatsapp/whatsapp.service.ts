@@ -23,6 +23,7 @@ import { DeviceStatus as SharedDeviceStatus, parsePhoneFromJid } from '@ws-spy/s
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 import { HeuristicsService } from '../ai/heuristics.service';
+import { ProposalsService } from '../ai/proposals.service';
 import { LinkCodesService } from '../auth/link-codes.service';
 import { MonitoredGroupsService } from '../monitored-groups/monitored-groups.service';
 
@@ -49,6 +50,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     private readonly heuristicsService: HeuristicsService,
     private readonly monitoredGroupsService: MonitoredGroupsService,
     private readonly linkCodesService: LinkCodesService,
+    private readonly proposalsService: ProposalsService,
   ) {
     this.sessionsPath =
       this.configService.get<string>('SESSIONS_PATH') ?? './sessions';
@@ -426,6 +428,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       const text = this.extractMessageText(msg.message);
       const sentAt = this.extractMessageDate(msg.messageTimestamp);
       const pushName = msg.pushName ?? undefined;
+      const senderJid = msg.key.participant ?? (fromMe ? null : jid);
 
       const contactId = await this.ensureContactForJid(
         deviceId,
@@ -462,9 +465,11 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           fromMe,
           text,
           sentAt,
+          senderJid,
         },
         update: {
           text,
+          ...(senderJid ? { senderJid } : {}),
         },
       });
 
@@ -511,6 +516,21 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         data: { phoneE164: phone },
       });
       this.logger.log(`Usuario ${userId} vinculado al número +${phone}`);
+      const adopted = await this.proposalsService.attachOrphans(userId, phone);
+      if (adopted.length > 0) {
+        this.logger.log(
+          `Re-atribuidas ${adopted.length} proposals RETENIDAS al user ${userId}`,
+        );
+        for (const proposal of adopted) {
+          this.eventsGateway.emitProposalCreated({
+            proposalId: proposal.id,
+            conversationId: proposal.conversationId,
+            categoria: proposal.categoria,
+            confianza: proposal.confianza,
+            creatorUserId: proposal.creatorUserId,
+          });
+        }
+      }
     } catch (error) {
       const isUniqueConflict =
         typeof error === 'object' &&

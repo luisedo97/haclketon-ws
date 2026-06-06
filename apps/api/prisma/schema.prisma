@@ -57,23 +57,35 @@ model Message {
   text           String?        @db.Text
   mediaUrl       String?
   sentAt         DateTime
+  senderJid      String?
   conversation   Conversation   @relation(fields: [conversationId], references: [id])
   analysisQueue  AnalysisQueue?
   proposal       TaskProposal?
 
   @@unique([conversationId, externalId])
+  @@index([senderJid])
 }
 
 model Task {
-  id          String     @id @default(cuid())
-  contactId   String
-  title       String
-  description String?    @db.Text
-  status      TaskStatus @default(PENDING)
-  dueAt       DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  contact     Contact    @relation(fields: [contactId], references: [id])
+  id               String        @id @default(cuid())
+  contactId        String?
+  contact          Contact?      @relation(fields: [contactId], references: [id])
+  assigneeUserId   String?
+  assignee         User?         @relation("AssignedTasks", fields: [assigneeUserId], references: [id])
+  createdByUserId  String?
+  createdBy        User?         @relation("CreatedTasks", fields: [createdByUserId], references: [id])
+  sourceProposalId String?       @unique
+  sourceProposal   TaskProposal? @relation(fields: [sourceProposalId], references: [id])
+  title            String
+  description      String?       @db.Text
+  category         String?       @db.VarChar(50)
+  status           TaskStatus    @default(PENDING)
+  dueAt            DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([assigneeUserId])
+  @@index([status])
 }
 
 model AiAnalysis {
@@ -99,27 +111,31 @@ model AnalysisQueue {
 }
 
 model TaskProposal {
-  id                  String         @id @default(cuid())
-  creatorUserId       String?
-  creator             User?          @relation(fields: [creatorUserId], references: [id])
-  sourceMessageId     String         @unique
-  sourceMessage       Message        @relation(fields: [sourceMessageId], references: [id])
-  conversationId      String
-  conversation        Conversation   @relation(fields: [conversationId], references: [id])
-  titulo              String         @db.VarChar(500)
-  descripcion         String?        @db.Text
-  fechaLimite         DateTime?
-  categoria           String         @db.VarChar(50)
-  responsableProbable String?        @db.VarChar(200)
-  confianza           Float
-  status              ProposalStatus @default(PENDIENTE)
-  rawOutput           Json
-  modelUsed           String         @db.VarChar(100)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  id                    String         @id @default(cuid())
+  creatorUserId         String?
+  creator               User?          @relation("ProposalsCreated", fields: [creatorUserId], references: [id])
+  matchedAssigneeUserId String?
+  matchedAssignee       User?          @relation("ProposalsMatched", fields: [matchedAssigneeUserId], references: [id])
+  sourceMessageId       String         @unique
+  sourceMessage         Message        @relation(fields: [sourceMessageId], references: [id])
+  conversationId        String
+  conversation          Conversation   @relation(fields: [conversationId], references: [id])
+  titulo                String         @db.VarChar(500)
+  descripcion           String?        @db.Text
+  fechaLimite           DateTime?
+  categoria             String         @db.VarChar(50)
+  responsableProbable   String?        @db.VarChar(200)
+  confianza             Float
+  status                ProposalStatus @default(PENDIENTE)
+  rawOutput             Json
+  modelUsed             String         @db.VarChar(100)
+  resultingTask         Task?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   @@index([status, createdAt])
   @@index([conversationId])
+  @@index([creatorUserId, status])
 }
 
 enum DeviceStatus {
@@ -168,16 +184,19 @@ model MonitoredGroup {
 }
 
 model User {
-  id              String           @id @default(cuid())
-  email           String           @unique
-  passwordHash    String
-  displayName     String
-  role            Role             @default(MEMBER)
-  phoneE164       String?          @unique
-  createdAt       DateTime         @default(now())
-  linkCodes       LinkCode[]
-  proposalsCreated TaskProposal[]
-  groupsAdded     MonitoredGroup[] @relation("AddedBy")
+  id               String           @id @default(cuid())
+  email            String           @unique
+  passwordHash     String
+  displayName      String
+  role             Role             @default(MEMBER)
+  phoneE164        String?          @unique
+  createdAt        DateTime         @default(now())
+  linkCodes        LinkCode[]
+  proposalsCreated TaskProposal[]   @relation("ProposalsCreated")
+  proposalsMatched TaskProposal[]   @relation("ProposalsMatched")
+  tasksAssigned    Task[]           @relation("AssignedTasks")
+  tasksCreated     Task[]           @relation("CreatedTasks")
+  groupsAdded      MonitoredGroup[] @relation("AddedBy")
 }
 
 model LinkCode {

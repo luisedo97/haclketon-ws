@@ -7,8 +7,18 @@ import {
   ConversationListItem,
   CreateDeviceDto,
   Device,
+  PublicUserLite,
+  TaskProposalDetail,
 } from '@ws-spy/shared';
 import { Observable } from 'rxjs';
+
+export interface ProposalPatch {
+  titulo?: string;
+  descripcion?: string | null;
+  fechaLimite?: string | null;
+  categoria?: string;
+  assigneeUserId?: string | null;
+}
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -59,5 +69,53 @@ export class ApiService {
 
   getApiUrl(): string {
     return this.baseUrl;
+  }
+
+  listProposals(
+    status: 'PENDIENTE' | 'APROBADA' | 'DESCARTADA' | 'RETENIDA' = 'PENDIENTE',
+  ): Observable<TaskProposalDetail[]> {
+    return this.http.get<TaskProposalDetail[]>(
+      `${this.baseUrl}/proposals?status=${status}`,
+    );
+  }
+
+  countPendingProposals(): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(
+      `${this.baseUrl}/proposals/count-pending`,
+    );
+  }
+
+  getProposal(id: string): Observable<TaskProposalDetail> {
+    return this.http.get<TaskProposalDetail>(
+      `${this.baseUrl}/proposals/${id}`,
+    );
+  }
+
+  updateProposal(id: string, patch: ProposalPatch): Observable<TaskProposalDetail> {
+    return this.http.patch<TaskProposalDetail>(
+      `${this.baseUrl}/proposals/${id}`,
+      patch,
+    );
+  }
+
+  approveProposal(
+    id: string,
+    patch: ProposalPatch,
+  ): Observable<{ proposal: TaskProposalDetail; task: { id: string } }> {
+    return this.http.post<{
+      proposal: TaskProposalDetail;
+      task: { id: string };
+    }>(`${this.baseUrl}/proposals/${id}/approve`, patch);
+  }
+
+  discardProposal(id: string): Observable<TaskProposalDetail> {
+    return this.http.post<TaskProposalDetail>(
+      `${this.baseUrl}/proposals/${id}/discard`,
+      {},
+    );
+  }
+
+  listUsers(): Observable<PublicUserLite[]> {
+    return this.http.get<PublicUserLite[]>(`${this.baseUrl}/users`);
   }
 }

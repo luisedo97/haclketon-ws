@@ -3,7 +3,9 @@ import { io, Socket } from 'socket.io-client';
 import {
   DeviceStatusEventPayload,
   MessageEventPayload,
+  ProposalApprovedEventPayload,
   ProposalCreatedEventPayload,
+  ProposalDiscardedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
 } from '@ws-spy/shared';
@@ -17,6 +19,8 @@ export class SocketService implements OnDestroy {
   readonly deviceStatus$ = new Subject<DeviceStatusEventPayload>();
   readonly message$ = new Subject<MessageEventPayload>();
   readonly proposalCreated$ = new Subject<ProposalCreatedEventPayload>();
+  readonly proposalApproved$ = new Subject<ProposalApprovedEventPayload>();
+  readonly proposalDiscarded$ = new Subject<ProposalDiscardedEventPayload>();
 
   connect(apiUrl: string, token: string | null) {
     if (this.socket?.connected) {
@@ -52,6 +56,20 @@ export class SocketService implements OnDestroy {
       SOCKET_EVENTS.PROPOSAL_CREATED,
       (payload: ProposalCreatedEventPayload) => {
         this.proposalCreated$.next(payload);
+      },
+    );
+
+    this.socket.on(
+      SOCKET_EVENTS.PROPOSAL_APPROVED,
+      (payload: ProposalApprovedEventPayload) => {
+        this.proposalApproved$.next(payload);
+      },
+    );
+
+    this.socket.on(
+      SOCKET_EVENTS.PROPOSAL_DISCARDED,
+      (payload: ProposalDiscardedEventPayload) => {
+        this.proposalDiscarded$.next(payload);
       },
     );
   }
