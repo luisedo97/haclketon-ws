@@ -12,9 +12,11 @@ import {
 import { formatConversationTitle } from './utils/conversation.utils';
 import { Subscription } from 'rxjs';
 import { ApiService } from './services/api.service';
+import { AuthService, LinkCodeResult, PublicUser } from './services/auth.service';
 import { SocketService } from './services/socket.service';
 
-type ViewMode = 'devices' | 'workspace';
+type ViewMode = 'auth' | 'devices' | 'workspace';
+type AuthMode = 'login' | 'register';
 
 @Component({
   selector: 'app-root',
@@ -26,7 +28,21 @@ type ViewMode = 'devices' | 'workspace';
 export class AppComponent implements OnInit, OnDestroy {
   readonly DeviceStatus = DeviceStatus;
 
-  viewMode = signal<ViewMode>('devices');
+  viewMode = signal<ViewMode>('auth');
+
+  // Auth UI state
+  authMode = signal<AuthMode>('login');
+  authEmail = signal('');
+  authPassword = signal('');
+  authDisplayName = signal('');
+  authSubmitting = signal(false);
+  authError = signal<string | null>(null);
+
+  // Link code UI state
+  linkCode = signal<LinkCodeResult | null>(null);
+  linkCodeLoading = signal(false);
+  linkCodeRemainingSec = signal<number>(0);
+  showAccountPanel = signal(false);
 
   devices = signal<Device[]>([]);
   conversations = signal<ConversationListItem[]>([]);
@@ -60,15 +76,23 @@ export class AppComponent implements OnInit, OnDestroy {
   private subscriptions = new Subscription();
   private conversationsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private conversationsLoadInFlight = false;
+  private linkCodeTimer: ReturnType<typeof setInterval> | null = null;
+
+  currentUser = computed<PublicUser | null>(() => this.auth.currentUser());
+  isAdmin = computed(() => this.auth.currentUser()?.role === 'ADMIN');
 
   constructor(
     private readonly api: ApiService,
     private readonly socket: SocketService,
+    private readonly auth: AuthService,
   ) {}
 
   ngOnInit() {
-    this.socket.connect(this.api.getApiUrl());
-    this.loadDevices();
+    if (this.auth.isAuthenticated()) {
+      this.bootstrapAuthenticated();
+    } else {
+      this.viewMode.set('auth');
+    }
 
     this.subscriptions.add(
       this.socket.qr$.subscribe(({ deviceId, qr }) => {
@@ -151,11 +175,134 @@ export class AppComponent implements OnInit, OnDestroy {
     if (this.conversationsRefreshTimer) {
       clearTimeout(this.conversationsRefreshTimer);
     }
+    if (this.linkCodeTimer) {
+      clearInterval(this.linkCodeTimer);
+    }
     this.subscriptions.unsubscribe();
     this.socket.disconnect();
   }
 
+  private bootstrapAuthenticated() {
+    this.viewMode.set('devices');
+    this.socket.connect(this.api.getApiUrl(), this.auth.token());
+    this.loadDevices();
+    // Refrescar el user — pudo cambiar phoneE164 mientras estaba offline.
+    this.auth.fetchMe().subscribe({
+      error: () => {
+        // El interceptor desloguea si es 401.
+      },
+    });
+  }
+
+  submitAuth() {
+    if (this.authSubmitting()) return;
+    const email = this.authEmail().trim();
+    const password = this.authPassword();
+    const displayName = this.authDisplayName().trim();
+
+    if (!email || !password) {
+      this.authError.set('Email y contraseña son requeridos.');
+      return;
+    }
+    if (this.authMode() === 'register' && !displayName) {
+      this.authError.set('El nombre es requerido para registrarse.');
+      return;
+    }
+
+    this.authSubmitting.set(true);
+    this.authError.set(null);
+
+    const obs =
+      this.authMode() === 'login'
+        ? this.auth.login({ email, password })
+        : this.auth.register({ email, password, displayName });
+
+    obs.subscribe({
+      next: () => {
+        this.authSubmitting.set(false);
+        this.authPassword.set('');
+        this.bootstrapAuthenticated();
+      },
+      error: (err) => {
+        this.authSubmitting.set(false);
+        this.authError.set(
+          this.extractErrorMessage(err, 'No se pudo autenticar.'),
+        );
+      },
+    });
+  }
+
+  toggleAuthMode() {
+    this.authMode.update((m) => (m === 'login' ? 'register' : 'login'));
+    this.authError.set(null);
+  }
+
+  logout() {
+    this.auth.logout();
+    this.socket.disconnect();
+    this.devices.set([]);
+    this.conversations.set([]);
+    this.activeConversation.set(null);
+    this.viewMode.set('auth');
+    this.linkCode.set(null);
+    this.showAccountPanel.set(false);
+    if (this.linkCodeTimer) {
+      clearInterval(this.linkCodeTimer);
+      this.linkCodeTimer = null;
+    }
+  }
+
+  toggleAccountPanel() {
+    this.showAccountPanel.update((v) => !v);
+  }
+
+  requestLinkCode() {
+    if (this.linkCodeLoading()) return;
+    this.linkCodeLoading.set(true);
+    this.error.set(null);
+    this.auth.generateLinkCode().subscribe({
+      next: (result) => {
+        this.linkCode.set(result);
+        this.linkCodeLoading.set(false);
+        this.startLinkCodeCountdown(result.expiresAt);
+      },
+      error: (err) => {
+        this.linkCodeLoading.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudo generar el código.'),
+        );
+      },
+    });
+  }
+
+  private startLinkCodeCountdown(expiresAtIso: string) {
+    if (this.linkCodeTimer) {
+      clearInterval(this.linkCodeTimer);
+    }
+    const expiresAt = new Date(expiresAtIso).getTime();
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+      this.linkCodeRemainingSec.set(remaining);
+      if (remaining === 0 && this.linkCodeTimer) {
+        clearInterval(this.linkCodeTimer);
+        this.linkCodeTimer = null;
+      }
+    };
+    tick();
+    this.linkCodeTimer = setInterval(tick, 1000);
+  }
+
+  formatRemaining(sec: number): string {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
   loadDevices() {
+    if (!this.isAdmin()) {
+      this.devices.set([]);
+      return;
+    }
     this.loading.set(true);
     this.error.set(null);
 

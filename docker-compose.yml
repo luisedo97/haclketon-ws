@@ -63,6 +63,9 @@ services:
       AI_CONTEXT_WINDOW: ${AI_CONTEXT_WINDOW:-15}
       AI_WORKER_INTERVAL_MS: ${AI_WORKER_INTERVAL_MS:-5000}
       AI_WORKER_BATCH_SIZE: ${AI_WORKER_BATCH_SIZE:-5}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-please-change}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      LINK_CODE_TTL_MIN: ${LINK_CODE_TTL_MIN:-15}
       SESSIONS_PATH: ${SESSIONS_PATH:-/data/sessions}
     ports:
       - '${API_PORT:-3000}:3000'

@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import {
   DeviceStatusEventPayload,
   MessageEventPayload,
+  ProposalCreatedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
 } from '@ws-spy/shared';
@@ -15,14 +16,21 @@ export class SocketService implements OnDestroy {
   readonly qr$ = new Subject<QrEventPayload>();
   readonly deviceStatus$ = new Subject<DeviceStatusEventPayload>();
   readonly message$ = new Subject<MessageEventPayload>();
+  readonly proposalCreated$ = new Subject<ProposalCreatedEventPayload>();
 
-  connect(apiUrl: string) {
+  connect(apiUrl: string, token: string | null) {
     if (this.socket?.connected) {
+      return;
+    }
+
+    if (!token) {
+      // Sin token la API rechaza el handshake; no intentamos.
       return;
     }
 
     this.socket = io(apiUrl, {
       transports: ['websocket', 'polling'],
+      auth: { token },
     });
 
     this.socket.on(SOCKET_EVENTS.QR, (payload: QrEventPayload) => {
@@ -39,6 +47,13 @@ export class SocketService implements OnDestroy {
     this.socket.on(SOCKET_EVENTS.MESSAGE, (payload: MessageEventPayload) => {
       this.message$.next(payload);
     });
+
+    this.socket.on(
+      SOCKET_EVENTS.PROPOSAL_CREATED,
+      (payload: ProposalCreatedEventPayload) => {
+        this.proposalCreated$.next(payload);
+      },
+    );
   }
 
   disconnect() {

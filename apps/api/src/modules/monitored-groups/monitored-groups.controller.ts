@@ -7,10 +7,13 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
+import { Role, User } from '@prisma/client';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { MonitoredGroupsService } from './monitored-groups.service';
-
-// TODO(F02S02): proteger todos estos endpoints con guard de rol admin.
 
 interface AddBody {
   deviceId?: string;
@@ -19,6 +22,8 @@ interface AddBody {
 }
 
 @Controller('monitored-groups')
+@UseGuards(RolesGuard)
+@Roles(Role.ADMIN)
 export class MonitoredGroupsController {
   constructor(private readonly service: MonitoredGroupsService) {}
 
@@ -36,7 +41,7 @@ export class MonitoredGroupsController {
   }
 
   @Post()
-  add(@Body() body: AddBody) {
+  add(@Body() body: AddBody, @CurrentUser() user: User) {
     if (!body.deviceId || !body.jid) {
       throw new BadRequestException('deviceId y jid son requeridos');
     }
@@ -44,6 +49,7 @@ export class MonitoredGroupsController {
       deviceId: body.deviceId,
       jid: body.jid,
       title: body.title ?? null,
+      addedByUserId: user.id,
     });
   }
 

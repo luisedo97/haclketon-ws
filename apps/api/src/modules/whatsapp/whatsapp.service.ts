@@ -23,7 +23,10 @@ import { DeviceStatus as SharedDeviceStatus, parsePhoneFromJid } from '@ws-spy/s
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 import { HeuristicsService } from '../ai/heuristics.service';
+import { LinkCodesService } from '../auth/link-codes.service';
 import { MonitoredGroupsService } from '../monitored-groups/monitored-groups.service';
+
+const LINK_CODE_RE = /^\d{6}$/;
 
 interface ActiveSession {
   socket: WASocket;
@@ -45,6 +48,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     private readonly eventsGateway: EventsGateway,
     private readonly heuristicsService: HeuristicsService,
     private readonly monitoredGroupsService: MonitoredGroupsService,
+    private readonly linkCodesService: LinkCodesService,
   ) {
     this.sessionsPath =
       this.configService.get<string>('SESSIONS_PATH') ?? './sessions';
@@ -401,6 +405,14 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      const candidateText = this.extractMessageText(msg.message);
+      const consumed = await this.tryConsumeLinkCode(msg, candidateText);
+      if (consumed) {
+        // El mensaje del código no se persiste — privacidad y para no
+        // dejar el código en el feed del grupo si alguien lo audita.
+        return;
+      }
+
       const allowed = await this.monitoredGroupsService.isMonitored(
         deviceId,
         jid,
@@ -475,6 +487,47 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         `Failed to persist message for device ${deviceId}: ${error instanceof Error ? error.message : error}`,
       );
     }
+  }
+
+  private async tryConsumeLinkCode(
+    msg: proto.IWebMessageInfo,
+    text: string | null,
+  ): Promise<boolean> {
+    if (!text) return false;
+    const trimmed = text.trim();
+    if (!LINK_CODE_RE.test(trimmed)) return false;
+
+    const participantJid = msg.key.participant ?? undefined;
+    if (!participantJid) return false;
+    const phone = parsePhoneFromJid(participantJid);
+    if (!phone) return false;
+
+    const userId = await this.linkCodesService.consume(trimmed, participantJid);
+    if (!userId) return false;
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { phoneE164: phone },
+      });
+      this.logger.log(`Usuario ${userId} vinculado al número +${phone}`);
+    } catch (error) {
+      const isUniqueConflict =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code: string }).code === 'P2002';
+      if (isUniqueConflict) {
+        this.logger.warn(
+          `No se pudo vincular ${phone} al usuario ${userId}: el número ya está vinculado a otra cuenta`,
+        );
+      } else {
+        this.logger.error(
+          `Error vinculando ${phone} al usuario ${userId}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+    return true;
   }
 
   private async maybeEnqueueForAnalysis(
