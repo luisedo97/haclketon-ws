@@ -29,6 +29,10 @@ import { MonitoredGroupsService } from '../monitored-groups/monitored-groups.ser
 
 const LINK_CODE_RE = /^\d{6}$/;
 
+const RECONNECT_BASE_MS = 3_000;
+const RECONNECT_MAX_MS = 300_000;
+const RECONNECT_JITTER_RATIO = 0.3;
+
 interface ActiveSession {
   socket: WASocket;
   deviceId: string;
@@ -41,6 +45,8 @@ interface ActiveSession {
 export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsappService.name);
   private readonly sessions = new Map<string, ActiveSession>();
+  private readonly reconnectAttempts = new Map<string, number>();
+  private readonly reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly sessionsPath: string;
 
   constructor(
@@ -83,6 +89,9 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    for (const [deviceId] of this.reconnectTimers) {
+      this.clearReconnectTimer(deviceId);
+    }
     for (const [deviceId] of this.sessions) {
       await this.disconnect(deviceId);
     }
@@ -191,6 +200,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (connection === 'open') {
+        this.reconnectAttempts.delete(deviceId);
         const phoneE164 =
           socket.user?.id?.split(':')[0]?.replace('@s.whatsapp.net', '') ??
           null;
@@ -221,10 +231,17 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         this.sessions.delete(deviceId);
 
         if (shouldReconnect) {
-          this.logger.warn(`Device ${deviceId} disconnected, reconnecting...`);
+          const attempt = this.reconnectAttempts.get(deviceId) ?? 0;
+          const delay = this.computeReconnectDelay(attempt);
+          this.reconnectAttempts.set(deviceId, attempt + 1);
+          this.logger.warn(
+            `Device ${deviceId} disconnected, reconnecting in ${Math.round(delay / 1000)}s (attempt ${attempt + 1})`,
+          );
           await this.updateDeviceStatus(deviceId, DeviceStatus.CONNECTING);
-          setTimeout(() => void this.connect(deviceId), 3000);
+          this.scheduleReconnect(deviceId, delay);
         } else {
+          this.reconnectAttempts.delete(deviceId);
+          this.clearReconnectTimer(deviceId);
           await this.updateDeviceStatus(deviceId, DeviceStatus.DISCONNECTED);
           this.logger.log(`Device ${deviceId} logged out`);
         }
@@ -278,6 +295,8 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
   }
 
   async disconnect(deviceId: string) {
+    this.clearReconnectTimer(deviceId);
+    this.reconnectAttempts.delete(deviceId);
     const session = this.sessions.get(deviceId);
     if (session) {
       session.socket.end(undefined);
@@ -285,6 +304,34 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     }
     await this.updateDeviceStatus(deviceId, DeviceStatus.DISCONNECTED);
     return { success: true };
+  }
+
+  private computeReconnectDelay(attempt: number): number {
+    const exponential = RECONNECT_BASE_MS * 2 ** attempt;
+    const capped = Math.min(exponential, RECONNECT_MAX_MS);
+    const jitter = capped * RECONNECT_JITTER_RATIO * (Math.random() * 2 - 1);
+    return Math.max(RECONNECT_BASE_MS, Math.min(capped + jitter, RECONNECT_MAX_MS));
+  }
+
+  private scheduleReconnect(deviceId: string, delayMs: number) {
+    this.clearReconnectTimer(deviceId);
+    const timer = setTimeout(() => {
+      this.reconnectTimers.delete(deviceId);
+      void this.connect(deviceId).catch((error) => {
+        this.logger.error(
+          `Reconnect failed for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+    }, delayMs);
+    this.reconnectTimers.set(deviceId, timer);
+  }
+
+  private clearReconnectTimer(deviceId: string) {
+    const existing = this.reconnectTimers.get(deviceId);
+    if (existing) {
+      clearTimeout(existing);
+      this.reconnectTimers.delete(deviceId);
+    }
   }
 
   async removeDevice(deviceId: string) {
