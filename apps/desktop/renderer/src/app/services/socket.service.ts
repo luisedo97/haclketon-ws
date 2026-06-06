@@ -2,6 +2,7 @@ import { Injectable, OnDestroy } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import {
   DeviceStatusEventPayload,
+  HistorySyncEventPayload,
   MessageEventPayload,
   ProposalApprovedEventPayload,
   ProposalCreatedEventPayload,
@@ -18,6 +19,7 @@ export class SocketService implements OnDestroy {
   readonly qr$ = new Subject<QrEventPayload>();
   readonly deviceStatus$ = new Subject<DeviceStatusEventPayload>();
   readonly message$ = new Subject<MessageEventPayload>();
+  readonly historySync$ = new Subject<HistorySyncEventPayload>();
   readonly proposalCreated$ = new Subject<ProposalCreatedEventPayload>();
   readonly proposalApproved$ = new Subject<ProposalApprovedEventPayload>();
   readonly proposalDiscarded$ = new Subject<ProposalDiscardedEventPayload>();
@@ -51,6 +53,13 @@ export class SocketService implements OnDestroy {
     this.socket.on(SOCKET_EVENTS.MESSAGE, (payload: MessageEventPayload) => {
       this.message$.next(payload);
     });
+
+    this.socket.on(
+      SOCKET_EVENTS.HISTORY_SYNC,
+      (payload: HistorySyncEventPayload) => {
+        this.historySync$.next(payload);
+      },
+    );
 
     this.socket.on(
       SOCKET_EVENTS.PROPOSAL_CREATED,

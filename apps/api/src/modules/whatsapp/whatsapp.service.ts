@@ -29,12 +29,20 @@ import { MonitoredGroupsService } from '../monitored-groups/monitored-groups.ser
 
 const LINK_CODE_RE = /^\d{6}$/;
 
+interface MessageHandleOptions {
+  /** Emitir al frontend en tiempo real (solo mensajes nuevos en vivo). */
+  live?: boolean;
+  /** Omitir allowlist de grupos monitoreados (sync histórico de todos los grupos). */
+  skipMonitoredCheck?: boolean;
+}
+
 interface ActiveSession {
   socket: WASocket;
   deviceId: string;
   store: ReturnType<typeof makeInMemoryStore>;
   storeInterval?: ReturnType<typeof setInterval>;
   persistStoreFile?: () => void;
+  historyBackfillDone?: boolean;
 }
 
 @Injectable()
@@ -141,7 +149,22 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       version,
       auth: state,
       printQRInTerminal: false,
-      browser: ['ws-spy', 'Desktop', '1.0.0'],
+      // Mac OS / Windows permiten syncFullHistory (historial completo al vincular).
+      browser: ['Mac OS', 'Desktop', '1.0.0'],
+      syncFullHistory: true,
+      shouldIgnoreJid: (jid) => {
+        if (!jid) return true;
+        if (this.shouldIgnoreJid(jid)) return true;
+        return !this.isGroupJid(jid);
+      },
+      getMessage: async (key) => {
+        const session = this.sessions.get(deviceId);
+        if (!key.remoteJid || !key.id || !session) {
+          return undefined;
+        }
+        const stored = await session.store.loadMessage(key.remoteJid, key.id);
+        return stored?.message ?? undefined;
+      },
     });
 
     const store = makeInMemoryStore({});
@@ -204,6 +227,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           phoneE164,
         });
         this.logger.log(`Device ${deviceId} connected as ${phoneE164}`);
+        void this.scheduleStoreBackfill(deviceId);
       }
 
       if (connection === 'close') {
@@ -231,14 +255,50 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    socket.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify') {
+    socket.ev.on('messages.upsert', ({ messages, type }) => {
+      if (type !== 'notify' && type !== 'append') {
         return;
       }
 
-      for (const msg of messages) {
-        await this.handleIncomingMessage(deviceId, msg);
-      }
+      const isLive = type === 'notify';
+      void this.processMessageBatch(deviceId, messages, {
+        live: isLive,
+        skipMonitoredCheck: !isLive,
+      }).catch((error) => {
+        this.logger.error(
+          `Failed to process messages.upsert for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+    });
+
+    socket.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest, progress }) => {
+      void this.handleMessagingHistorySet(deviceId, {
+        chats,
+        contacts,
+        messages,
+        isLatest,
+        progress,
+      }).catch((error) => {
+        this.logger.error(
+          `Failed to process messaging-history.set for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+    });
+
+    socket.ev.on('messages.update', (updates) => {
+      void this.processMessageUpdates(deviceId, updates).catch((error) => {
+        this.logger.error(
+          `Failed to process messages.update for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+    });
+
+    socket.ev.on('messages.delete', (item) => {
+      void this.processMessageDeletes(deviceId, item).catch((error) => {
+        this.logger.error(
+          `Failed to process messages.delete for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
     });
 
     socket.ev.on('contacts.upsert', async (contacts) => {
@@ -389,10 +449,235 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async handleMessagingHistorySet(
+    deviceId: string,
+    payload: {
+      chats: Chat[];
+      contacts: BaileysContact[];
+      messages: proto.IWebMessageInfo[];
+      isLatest?: boolean;
+      progress?: number | null;
+    },
+  ) {
+    const { chats, contacts, messages, isLatest, progress } = payload;
+
+    for (const contact of contacts) {
+      await this.syncContact(deviceId, contact);
+    }
+
+    for (const chat of chats) {
+      await this.syncChat(deviceId, chat);
+    }
+
+    await this.processMessageBatch(deviceId, messages, {
+      live: false,
+      skipMonitoredCheck: true,
+    });
+
+    this.eventsGateway.emitHistorySync({
+      deviceId,
+      progress,
+      isLatest,
+    });
+
+    if (isLatest) {
+      const session = this.sessions.get(deviceId);
+      session?.persistStoreFile?.();
+      this.logger.log(`Historial completo sincronizado para device ${deviceId}`);
+    } else if (progress != null) {
+      this.logger.log(
+        `Sincronizando historial para device ${deviceId}: ${progress}%`,
+      );
+    }
+  }
+
+  private async processMessageBatch(
+    deviceId: string,
+    messages: proto.IWebMessageInfo[],
+    options: MessageHandleOptions,
+  ) {
+    for (const msg of messages) {
+      await this.handleIncomingMessage(deviceId, msg, options);
+    }
+  }
+
+  private async processMessageUpdates(
+    deviceId: string,
+    updates: { key: proto.IMessageKey; update: Partial<proto.IWebMessageInfo> }[],
+  ) {
+    for (const { key, update } of updates) {
+      await this.handleMessageUpdate(deviceId, key, update);
+    }
+  }
+
+  private async processMessageDeletes(
+    deviceId: string,
+    item:
+      | { keys: proto.IMessageKey[] }
+      | { jid: string; all: true },
+  ) {
+    if ('all' in item) {
+      const jid = item.jid;
+      if (!this.isGroupJid(jid)) {
+        return;
+      }
+
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { deviceId_jid: { deviceId, jid } },
+        select: { id: true },
+      });
+      if (!conversation) {
+        return;
+      }
+
+      await this.prisma.message.deleteMany({
+        where: { conversationId: conversation.id },
+      });
+      return;
+    }
+
+    for (const key of item.keys) {
+      if (!key.remoteJid || !key.id || !this.isGroupJid(key.remoteJid)) {
+        continue;
+      }
+
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { deviceId_jid: { deviceId, jid: key.remoteJid } },
+        select: { id: true },
+      });
+      if (!conversation) {
+        continue;
+      }
+
+      await this.prisma.message.deleteMany({
+        where: {
+          conversationId: conversation.id,
+          externalId: key.id,
+        },
+      });
+    }
+  }
+
+  private async handleMessageUpdate(
+    deviceId: string,
+    key: proto.IMessageKey,
+    update: Partial<proto.IWebMessageInfo>,
+  ) {
+    if (!key.remoteJid || !key.id || !this.isGroupJid(key.remoteJid)) {
+      return;
+    }
+
+    if (!update.message) {
+      return;
+    }
+
+    const text = this.extractMessageText(update.message);
+    if (text === null) {
+      return;
+    }
+
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { deviceId_jid: { deviceId, jid: key.remoteJid } },
+      select: { id: true },
+    });
+    if (!conversation) {
+      return;
+    }
+
+    const savedMessage = await this.prisma.message.updateMany({
+      where: {
+        conversationId: conversation.id,
+        externalId: key.id,
+      },
+      data: { text },
+    });
+
+    if (savedMessage.count === 0) {
+      return;
+    }
+
+    const message = await this.prisma.message.findFirst({
+      where: {
+        conversationId: conversation.id,
+        externalId: key.id,
+      },
+    });
+    if (!message) {
+      return;
+    }
+
+    this.eventsGateway.emitMessage({
+      deviceId,
+      message: {
+        id: message.id,
+        conversationId: message.conversationId,
+        externalId: message.externalId,
+        fromMe: message.fromMe,
+        text: message.text,
+        mediaUrl: message.mediaUrl,
+        sentAt: message.sentAt.toISOString(),
+      },
+    });
+  }
+
+  private scheduleStoreBackfill(deviceId: string) {
+    setTimeout(() => {
+      void this.backfillFromStore(deviceId).catch((error) => {
+        this.logger.warn(
+          `Store backfill failed for ${deviceId}: ${error instanceof Error ? error.message : error}`,
+        );
+      });
+    }, 8_000);
+  }
+
+  private async backfillFromStore(deviceId: string) {
+    const session = this.sessions.get(deviceId);
+    if (!session || session.historyBackfillDone) {
+      return;
+    }
+
+    session.historyBackfillDone = true;
+
+    const chats = session.store.chats.all();
+    let total = 0;
+
+    for (const chat of chats) {
+      if (!this.isGroupJid(chat.id)) {
+        continue;
+      }
+
+      const msgList = session.store.messages[chat.id];
+      if (!msgList) {
+        continue;
+      }
+
+      const messages = msgList.toJSON();
+      total += messages.length;
+
+      await this.processMessageBatch(deviceId, messages, {
+        live: false,
+        skipMonitoredCheck: true,
+      });
+    }
+
+    if (total > 0) {
+      this.logger.log(
+        `Backfill desde store completado para ${deviceId}: ${total} mensajes de grupo`,
+      );
+      this.eventsGateway.emitHistorySync({
+        deviceId,
+        isLatest: true,
+      });
+    }
+  }
+
   private async handleIncomingMessage(
     deviceId: string,
     msg: proto.IWebMessageInfo,
+    options: MessageHandleOptions = {},
   ) {
+    const { live = true, skipMonitoredCheck = false } = options;
+
     try {
       if (!msg.key?.remoteJid || !msg.message) {
         return;
@@ -408,19 +693,23 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
       }
 
       const candidateText = this.extractMessageText(msg.message);
-      const consumed = await this.tryConsumeLinkCode(msg, candidateText);
-      if (consumed) {
-        // El mensaje del código no se persiste — privacidad y para no
-        // dejar el código en el feed del grupo si alguien lo audita.
-        return;
+      if (live) {
+        const consumed = await this.tryConsumeLinkCode(msg, candidateText);
+        if (consumed) {
+          // El mensaje del código no se persiste — privacidad y para no
+          // dejar el código en el feed del grupo si alguien lo audita.
+          return;
+        }
       }
 
-      const allowed = await this.monitoredGroupsService.isMonitored(
-        deviceId,
-        jid,
-      );
-      if (!allowed) {
-        return;
+      if (!skipMonitoredCheck) {
+        const allowed = await this.monitoredGroupsService.isMonitored(
+          deviceId,
+          jid,
+        );
+        if (!allowed) {
+          return;
+        }
       }
 
       const externalId = msg.key.id ?? `${Date.now()}`;
@@ -473,20 +762,22 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      this.eventsGateway.emitMessage({
-        deviceId,
-        message: {
-          id: savedMessage.id,
-          conversationId: savedMessage.conversationId,
-          externalId: savedMessage.externalId,
-          fromMe: savedMessage.fromMe,
-          text: savedMessage.text,
-          mediaUrl: savedMessage.mediaUrl,
-          sentAt: savedMessage.sentAt.toISOString(),
-        },
-      });
+      if (live) {
+        this.eventsGateway.emitMessage({
+          deviceId,
+          message: {
+            id: savedMessage.id,
+            conversationId: savedMessage.conversationId,
+            externalId: savedMessage.externalId,
+            fromMe: savedMessage.fromMe,
+            text: savedMessage.text,
+            mediaUrl: savedMessage.mediaUrl,
+            sentAt: savedMessage.sentAt.toISOString(),
+          },
+        });
 
-      await this.maybeEnqueueForAnalysis(savedMessage.id, text, jid);
+        await this.maybeEnqueueForAnalysis(savedMessage.id, text, jid);
+      }
     } catch (error) {
       this.logger.error(
         `Failed to persist message for device ${deviceId}: ${error instanceof Error ? error.message : error}`,

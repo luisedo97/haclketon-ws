@@ -233,6 +233,21 @@ export class AppComponent implements OnInit, OnDestroy {
         }
       }),
     );
+
+    this.subscriptions.add(
+      this.socket.historySync$.subscribe(({ deviceId, isLatest }) => {
+        if (!isLatest || this.selectedDeviceId() !== deviceId) {
+          return;
+        }
+
+        this.loadConversations(deviceId);
+
+        const active = this.activeConversation();
+        if (active) {
+          this.openConversation(active.id);
+        }
+      }),
+    );
   }
 
   ngOnDestroy() {
