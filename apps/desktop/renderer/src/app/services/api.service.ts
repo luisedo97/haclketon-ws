@@ -27,10 +27,21 @@ export interface ProposalPatch {
   assigneeUserId?: string | null;
 }
 
+function resolveBaseUrl(): string {
+  // Electron expone la URL via preload; en navegador caemos al mismo origen
+  // donde la API sirve el bundle estático (F05S01).
+  if (window.wsSpy?.apiUrl) {
+    return window.wsSpy.apiUrl;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost:3000';
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private readonly baseUrl =
-    window.wsSpy?.apiUrl ?? 'http://localhost:3000';
+  private readonly baseUrl = resolveBaseUrl();
 
   constructor(private readonly http: HttpClient) {}
 

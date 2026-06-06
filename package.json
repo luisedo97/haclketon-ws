@@ -8,6 +8,7 @@
     "dev:api": "pnpm --filter @ws-spy/api dev",
     "dev:desktop": "pnpm --filter @ws-spy/desktop dev",
     "build": "pnpm -r build",
+    "build:web": "pnpm --filter @ws-spy/shared build && pnpm --filter ws-spy-renderer build && pnpm --filter @ws-spy/api build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "compose:up": "docker compose up -d --build",
