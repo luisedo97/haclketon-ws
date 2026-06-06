@@ -5,6 +5,7 @@ export const SOCKET_EVENTS = {
   DEVICE_STATUS: 'whatsapp:device-status',
   MESSAGE: 'whatsapp:message',
   HISTORY_SYNC: 'whatsapp:history-sync',
+  TASK_CREATED: 'task:created',
   TASK_UPDATED: 'task:updated',
   PROPOSAL_CREATED: 'proposal:created',
   PROPOSAL_APPROVED: 'proposal:approved',
@@ -35,6 +36,12 @@ export interface HistorySyncEventPayload {
 
 export interface TaskUpdatedEventPayload {
   taskId: string;
+  status: TaskStatus;
+}
+
+export interface TaskCreatedEventPayload {
+  taskId: string;
+  assigneeUserId: string | null;
   status: TaskStatus;
 }
 

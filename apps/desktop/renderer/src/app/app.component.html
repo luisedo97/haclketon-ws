@@ -12,6 +12,7 @@
         <button class="btn primary" (click)="openInbox()">
           Bandeja ({{ inboxCount() }})
         </button>
+        <button class="btn secondary" (click)="openTablero()">Tablero</button>
         <button class="btn secondary" (click)="loadDevices()">Actualizar</button>
         <button class="btn ghost" (click)="toggleAccountPanel()">
           {{ currentUser()?.displayName ?? 'Cuenta' }}
@@ -367,6 +368,108 @@
         }
       </main>
     </div>
+  } @else if (viewMode() === 'tablero') {
+    <section class="card board-filters">
+      <div class="board-filters-row">
+        <strong>Filtros</strong>
+        <label class="board-toggle">
+          <input
+            type="checkbox"
+            [checked]="boardFilterOnlyMine()"
+            (change)="boardFilterOnlyMine.set($any($event.target).checked)"
+          />
+          Solo mis tareas
+        </label>
+        <label>
+          Asignado a
+          <select
+            [ngModel]="boardFilterAssigneeUserId() ?? ''"
+            (ngModelChange)="boardFilterAssigneeUserId.set($event || null)"
+            name="board-assignee"
+          >
+            <option value="">Todos</option>
+            @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.displayName }}</option>
+            }
+          </select>
+        </label>
+        <button class="btn ghost" (click)="clearBoardFilters()">Limpiar</button>
+        <button class="btn ghost" (click)="loadBoard()">↻</button>
+      </div>
+      <div class="board-chips">
+        @for (cat of boardCategories(); track cat) {
+          <button
+            type="button"
+            class="chip"
+            [class.active]="isBoardCategoryActive(cat)"
+            (click)="toggleBoardCategory(cat)"
+          >
+            {{ cat }}
+          </button>
+        }
+      </div>
+    </section>
+
+    <nav class="board-mobile-tabs">
+      @for (col of BOARD_COLUMNS; track col.id) {
+        <button
+          type="button"
+          class="board-tab"
+          [class.active]="activeMobileBoardColumn() === col.id"
+          (click)="activeMobileBoardColumn.set(col.id)"
+        >
+          {{ col.label }} ({{ tasksForColumn(col.id).length }})
+        </button>
+      }
+    </nav>
+
+    @if (boardLoading() && boardTasks().length === 0) {
+      <p class="muted">Cargando tablero...</p>
+    } @else {
+      <div class="board" cdkDropListGroup>
+        @for (col of BOARD_COLUMNS; track col.id) {
+          <div
+            class="board-column"
+            [class.mobile-active]="activeMobileBoardColumn() === col.id"
+          >
+            <header class="board-column-header">
+              <h3>{{ col.label }}</h3>
+              <span class="board-count">{{ tasksForColumn(col.id).length }}</span>
+            </header>
+            <div
+              class="board-dropzone"
+              cdkDropList
+              [id]="'col-' + col.id"
+              [cdkDropListData]="col.id"
+              [cdkDropListConnectedTo]="boardConnectedIds"
+              (cdkDropListDropped)="onDropTask($event, col.id)"
+            >
+              @for (task of tasksForColumn(col.id); track task.id) {
+                <article class="board-card" cdkDrag [cdkDragData]="task">
+                  <header class="board-card-header">
+                    <strong>{{ task.title }}</strong>
+                    @if (task.category) {
+                      <span class="board-cat">{{ task.category }}</span>
+                    }
+                  </header>
+                  @if (task.description) {
+                    <p class="board-card-desc">{{ task.description }}</p>
+                  }
+                  <footer class="board-card-footer">
+                    <span class="board-assignee">{{ taskAssigneeLabel(task) }}</span>
+                    @if (formatDueDate(task.dueAt); as due) {
+                      <span class="board-due">{{ due }}</span>
+                    }
+                  </footer>
+                </article>
+              } @empty {
+                <p class="board-empty muted small">Sin tareas</p>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
   } @else {
     <div class="workspace">
       <aside class="sidebar">

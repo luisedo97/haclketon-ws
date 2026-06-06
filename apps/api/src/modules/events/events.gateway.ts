@@ -16,6 +16,7 @@ import {
   ProposalDiscardedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
+  TaskCreatedEventPayload,
   TaskUpdatedEventPayload,
 } from '@ws-spy/shared';
 
@@ -84,6 +85,10 @@ export class EventsGateway implements OnGatewayConnection {
 
   emitTaskUpdated(payload: TaskUpdatedEventPayload) {
     this.server.emit(SOCKET_EVENTS.TASK_UPDATED, payload);
+  }
+
+  emitTaskCreated(payload: TaskCreatedEventPayload) {
+    this.server.emit(SOCKET_EVENTS.TASK_CREATED, payload);
   }
 
   emitProposalCreated(payload: ProposalCreatedEventPayload) {
