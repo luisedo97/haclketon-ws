@@ -5,6 +5,7 @@ import { ContactsModule } from './modules/contacts/contacts.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { EventsModule } from './modules/events/events.module';
 import { HealthModule } from './modules/health/health.module';
+import { MonitoredGroupsModule } from './modules/monitored-groups/monitored-groups.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -18,6 +19,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     EventsModule,
     HealthModule,
+    MonitoredGroupsModule,
     WhatsappModule,
     ContactsModule,
     ConversationsModule,
