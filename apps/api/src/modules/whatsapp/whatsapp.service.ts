@@ -23,6 +23,7 @@ import { DeviceStatus as SharedDeviceStatus, parsePhoneFromJid } from '@ws-spy/s
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
 import { HeuristicsService } from '../ai/heuristics.service';
+import { MonitoredGroupsService } from '../monitored-groups/monitored-groups.service';
 
 interface ActiveSession {
   socket: WASocket;
@@ -43,6 +44,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly eventsGateway: EventsGateway,
     private readonly heuristicsService: HeuristicsService,
+    private readonly monitoredGroupsService: MonitoredGroupsService,
   ) {
     this.sessionsPath =
       this.configService.get<string>('SESSIONS_PATH') ?? './sessions';
@@ -340,6 +342,10 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
+      if (!this.isGroupJid(jid)) {
+        return;
+      }
+
       const title = chat.name ?? null;
       const lastMessageAt = chat.conversationTimestamp
         ? new Date(Number(chat.conversationTimestamp) * 1000)
@@ -388,6 +394,18 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
       const jid = msg.key.remoteJid;
       if (this.shouldIgnoreJid(jid)) {
+        return;
+      }
+
+      if (!this.isGroupJid(jid)) {
+        return;
+      }
+
+      const allowed = await this.monitoredGroupsService.isMonitored(
+        deviceId,
+        jid,
+      );
+      if (!allowed) {
         return;
       }
 
@@ -549,6 +567,10 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
 
   private shouldIgnoreJid(jid: string): boolean {
     return jid === 'status@broadcast' || jid.endsWith('@broadcast');
+  }
+
+  private isGroupJid(jid: string): boolean {
+    return jid.endsWith('@g.us');
   }
 
   private async updateDeviceStatus(deviceId: string, status: DeviceStatus) {

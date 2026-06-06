@@ -8,14 +8,15 @@ datasource db {
 }
 
 model Device {
-  id            String         @id @default(cuid())
-  label         String
-  phoneE164     String?
-  status        DeviceStatus   @default(DISCONNECTED)
-  sessionPath   String         @unique
-  createdAt     DateTime       @default(now())
-  contacts      Contact[]
-  conversations Conversation[]
+  id              String           @id @default(cuid())
+  label           String
+  phoneE164       String?
+  status          DeviceStatus     @default(DISCONNECTED)
+  sessionPath     String           @unique
+  createdAt       DateTime         @default(now())
+  contacts        Contact[]
+  conversations   Conversation[]
+  monitoredGroups MonitoredGroup[]
 }
 
 model Contact {
@@ -149,4 +150,17 @@ enum ProposalStatus {
   APROBADA
   DESCARTADA
   RETENIDA
+}
+
+model MonitoredGroup {
+  id              String   @id @default(cuid())
+  deviceId        String
+  device          Device   @relation(fields: [deviceId], references: [id])
+  jid             String
+  title           String?
+  addedByUserId   String?
+  addedAt         DateTime @default(now())
+
+  @@unique([deviceId, jid])
+  @@index([deviceId])
 }
