@@ -4,6 +4,7 @@ export const SOCKET_EVENTS = {
   QR: 'whatsapp:qr',
   DEVICE_STATUS: 'whatsapp:device-status',
   MESSAGE: 'whatsapp:message',
+  HISTORY_SYNC: 'whatsapp:history-sync',
   TASK_UPDATED: 'task:updated',
   PROPOSAL_CREATED: 'proposal:created',
 } as const;
@@ -22,6 +23,12 @@ export interface DeviceStatusEventPayload {
 export interface MessageEventPayload {
   deviceId: string;
   message: Message;
+}
+
+export interface HistorySyncEventPayload {
+  deviceId: string;
+  progress?: number | null;
+  isLatest?: boolean;
 }
 
 export interface TaskUpdatedEventPayload {
