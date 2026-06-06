@@ -528,3 +528,158 @@
     margin-bottom: 8px;
   }
 }
+
+/* F03 — Bandeja */
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  min-height: 500px;
+}
+
+.inbox-list {
+  background: #131b25;
+  border: 1px solid #1f2a36;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 700px;
+  overflow-y: auto;
+
+  .proposal-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .proposal-item {
+    width: 100%;
+    text-align: left;
+    background: #0f161e;
+    border: 1px solid #1f2a36;
+    border-radius: 6px;
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: #e7ecf3;
+
+    &:hover {
+      background: #182230;
+    }
+
+    &.active {
+      border-color: #4f7df4;
+      background: #182230;
+    }
+  }
+
+  .proposal-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+}
+
+.inbox-editor {
+  background: #131b25;
+  border: 1px solid #1f2a36;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.proposal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: #c5cfdc;
+    font-size: 14px;
+
+    input,
+    textarea,
+    select {
+      background: #0c1217;
+      color: #e7ecf3;
+      border: 1px solid #273142;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+  }
+
+  .row.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+
+    label {
+      margin: 0;
+    }
+  }
+
+  .proposal-source {
+    background: #0c1217;
+    border: 1px solid #1f2a36;
+    border-radius: 6px;
+    padding: 12px;
+
+    h4 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #9aa7b8;
+    }
+
+    blockquote {
+      margin: 8px 0;
+      padding-left: 12px;
+      border-left: 3px solid #4f7df4;
+      color: #e7ecf3;
+      font-style: italic;
+    }
+  }
+
+  .proposal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+}
+
+.confidence-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #273142;
+
+  &[data-level='high'] {
+    background: #14532d;
+    color: #bbf7d0;
+  }
+  &[data-level='medium'] {
+    background: #713f12;
+    color: #fde68a;
+  }
+  &[data-level='low'] {
+    background: #7f1d1d;
+    color: #fecaca;
+  }
+}
+
+@media (max-width: 900px) {
+  .inbox-layout {
+    grid-template-columns: 1fr;
+  }
+}

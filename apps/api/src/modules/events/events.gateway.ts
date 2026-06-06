@@ -10,7 +10,9 @@ import { Server, Socket } from 'socket.io';
 import {
   DeviceStatusEventPayload,
   MessageEventPayload,
+  ProposalApprovedEventPayload,
   ProposalCreatedEventPayload,
+  ProposalDiscardedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
   TaskUpdatedEventPayload,
@@ -81,5 +83,13 @@ export class EventsGateway implements OnGatewayConnection {
 
   emitProposalCreated(payload: ProposalCreatedEventPayload) {
     this.server.emit(SOCKET_EVENTS.PROPOSAL_CREATED, payload);
+  }
+
+  emitProposalApproved(payload: ProposalApprovedEventPayload) {
+    this.server.emit(SOCKET_EVENTS.PROPOSAL_APPROVED, payload);
+  }
+
+  emitProposalDiscarded(payload: ProposalDiscardedEventPayload) {
+    this.server.emit(SOCKET_EVENTS.PROPOSAL_DISCARDED, payload);
   }
 }

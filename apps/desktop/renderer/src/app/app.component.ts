@@ -8,15 +8,25 @@ import {
   Device,
   DeviceStatus,
   Message,
+  PublicUserLite,
+  TaskProposalDetail,
 } from '@ws-spy/shared';
 import { formatConversationTitle } from './utils/conversation.utils';
 import { Subscription } from 'rxjs';
-import { ApiService } from './services/api.service';
+import { ApiService, ProposalPatch } from './services/api.service';
 import { AuthService, LinkCodeResult, PublicUser } from './services/auth.service';
 import { SocketService } from './services/socket.service';
 
-type ViewMode = 'auth' | 'devices' | 'workspace';
+type ViewMode = 'auth' | 'devices' | 'workspace' | 'inbox';
 type AuthMode = 'login' | 'register';
+
+interface ProposalDraft {
+  titulo: string;
+  descripcion: string;
+  fechaLimite: string;
+  categoria: string;
+  assigneeUserId: string;
+}
 
 @Component({
   selector: 'app-root',
@@ -43,6 +53,23 @@ export class AppComponent implements OnInit, OnDestroy {
   linkCodeLoading = signal(false);
   linkCodeRemainingSec = signal<number>(0);
   showAccountPanel = signal(false);
+
+  // Inbox state
+  inboxCount = signal(0);
+  inboxProposals = signal<TaskProposalDetail[]>([]);
+  inboxLoading = signal(false);
+  selectedProposalId = signal<string | null>(null);
+  proposalDraft = signal<ProposalDraft | null>(null);
+  proposalSaving = signal(false);
+  users = signal<PublicUserLite[]>([]);
+  readonly CATEGORIES = [
+    'logística',
+    'finanzas',
+    'voluntariado',
+    'comunicación',
+    'administración',
+    'otro',
+  ] as const;
 
   devices = signal<Device[]>([]);
   conversations = signal<ConversationListItem[]>([]);
@@ -80,6 +107,11 @@ export class AppComponent implements OnInit, OnDestroy {
 
   currentUser = computed<PublicUser | null>(() => this.auth.currentUser());
   isAdmin = computed(() => this.auth.currentUser()?.role === 'ADMIN');
+  selectedProposal = computed<TaskProposalDetail | null>(() => {
+    const id = this.selectedProposalId();
+    if (!id) return null;
+    return this.inboxProposals().find((p) => p.id === id) ?? null;
+  });
 
   constructor(
     private readonly api: ApiService,
@@ -114,6 +146,38 @@ export class AppComponent implements OnInit, OnDestroy {
           if (this.selectedDeviceId() === deviceId) {
             this.loadConversations(deviceId);
           }
+        }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.socket.proposalCreated$.subscribe((payload) => {
+        if (payload.creatorUserId !== this.currentUser()?.id) return;
+        this.inboxCount.update((n) => n + 1);
+        if (this.viewMode() === 'inbox') {
+          this.loadInbox();
+        }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.socket.proposalApproved$.subscribe((payload) => {
+        if (payload.creatorUserId !== this.currentUser()?.id) return;
+        if (this.viewMode() === 'inbox') {
+          this.removeProposalFromInbox(payload.proposalId);
+        } else {
+          this.refreshInboxCount();
+        }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.socket.proposalDiscarded$.subscribe((payload) => {
+        if (payload.creatorUserId !== this.currentUser()?.id) return;
+        if (this.viewMode() === 'inbox') {
+          this.removeProposalFromInbox(payload.proposalId);
+        } else {
+          this.refreshInboxCount();
         }
       }),
     );
@@ -186,12 +250,158 @@ export class AppComponent implements OnInit, OnDestroy {
     this.viewMode.set('devices');
     this.socket.connect(this.api.getApiUrl(), this.auth.token());
     this.loadDevices();
+    this.refreshInboxCount();
+    this.loadUsers();
     // Refrescar el user — pudo cambiar phoneE164 mientras estaba offline.
     this.auth.fetchMe().subscribe({
       error: () => {
         // El interceptor desloguea si es 401.
       },
     });
+  }
+
+  refreshInboxCount() {
+    if (!this.auth.isAuthenticated()) {
+      this.inboxCount.set(0);
+      return;
+    }
+    this.api.countPendingProposals().subscribe({
+      next: ({ count }) => this.inboxCount.set(count),
+      error: () => {},
+    });
+  }
+
+  loadUsers() {
+    if (!this.auth.isAuthenticated()) return;
+    this.api.listUsers().subscribe({
+      next: (users) => this.users.set(users),
+      error: () => {},
+    });
+  }
+
+  openInbox() {
+    this.viewMode.set('inbox');
+    this.selectedProposalId.set(null);
+    this.proposalDraft.set(null);
+    this.error.set(null);
+    this.loadInbox();
+  }
+
+  loadInbox() {
+    this.inboxLoading.set(true);
+    this.api.listProposals('PENDIENTE').subscribe({
+      next: (list) => {
+        this.inboxProposals.set(list);
+        this.inboxCount.set(list.length);
+        this.inboxLoading.set(false);
+      },
+      error: (err) => {
+        this.inboxLoading.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudieron cargar las propuestas.'),
+        );
+      },
+    });
+  }
+
+  selectProposal(proposal: TaskProposalDetail) {
+    this.selectedProposalId.set(proposal.id);
+    this.proposalDraft.set({
+      titulo: proposal.titulo,
+      descripcion: proposal.descripcion ?? '',
+      fechaLimite: proposal.fechaLimite
+        ? proposal.fechaLimite.slice(0, 10)
+        : '',
+      categoria: proposal.categoria,
+      assigneeUserId: proposal.matchedAssigneeUserId ?? '',
+    });
+  }
+
+  updateDraft<K extends keyof ProposalDraft>(field: K, value: ProposalDraft[K]) {
+    const current = this.proposalDraft();
+    if (!current) return;
+    this.proposalDraft.set({ ...current, [field]: value });
+  }
+
+  private currentPatch(): ProposalPatch {
+    const draft = this.proposalDraft();
+    if (!draft) return {};
+    return {
+      titulo: draft.titulo,
+      descripcion: draft.descripcion || null,
+      fechaLimite: draft.fechaLimite || null,
+      categoria: draft.categoria,
+      assigneeUserId: draft.assigneeUserId || null,
+    };
+  }
+
+  saveDraft() {
+    const id = this.selectedProposalId();
+    if (!id || this.proposalSaving()) return;
+    this.proposalSaving.set(true);
+    this.api.updateProposal(id, this.currentPatch()).subscribe({
+      next: (updated) => {
+        this.inboxProposals.update((list) =>
+          list.map((p) => (p.id === updated.id ? updated : p)),
+        );
+        this.proposalSaving.set(false);
+      },
+      error: (err) => {
+        this.proposalSaving.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudo guardar la propuesta.'),
+        );
+      },
+    });
+  }
+
+  approveProposal() {
+    const id = this.selectedProposalId();
+    if (!id || this.proposalSaving()) return;
+    this.proposalSaving.set(true);
+    this.api.approveProposal(id, this.currentPatch()).subscribe({
+      next: () => {
+        this.proposalSaving.set(false);
+        this.removeProposalFromInbox(id);
+      },
+      error: (err) => {
+        this.proposalSaving.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudo aprobar la propuesta.'),
+        );
+      },
+    });
+  }
+
+  discardProposal() {
+    const id = this.selectedProposalId();
+    if (!id || this.proposalSaving()) return;
+    this.proposalSaving.set(true);
+    this.api.discardProposal(id).subscribe({
+      next: () => {
+        this.proposalSaving.set(false);
+        this.removeProposalFromInbox(id);
+      },
+      error: (err) => {
+        this.proposalSaving.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudo descartar la propuesta.'),
+        );
+      },
+    });
+  }
+
+  private removeProposalFromInbox(id: string) {
+    this.inboxProposals.update((list) => list.filter((p) => p.id !== id));
+    this.inboxCount.set(this.inboxProposals().length);
+    this.selectedProposalId.set(null);
+    this.proposalDraft.set(null);
+  }
+
+  confidenceBucket(c: number): 'low' | 'medium' | 'high' {
+    if (c >= 0.8) return 'high';
+    if (c >= 0.5) return 'medium';
+    return 'low';
   }
 
   submitAuth() {

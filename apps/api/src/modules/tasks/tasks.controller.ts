@@ -8,7 +8,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { User } from '@prisma/client';
 import { CreateTaskDto, UpdateTaskDto } from '../../common/dto';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TasksService } from './tasks.service';
 
 @Controller('tasks')
@@ -16,8 +18,11 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Get()
-  findAll(@Query('contactId') contactId?: string) {
-    return this.tasksService.findAll(contactId);
+  findAll(
+    @Query('contactId') contactId?: string,
+    @Query('assigneeUserId') assigneeUserId?: string,
+  ) {
+    return this.tasksService.findAll({ contactId, assigneeUserId });
   }
 
   @Get(':id')
@@ -26,8 +31,8 @@ export class TasksController {
   }
 
   @Post()
-  create(@Body() dto: CreateTaskDto) {
-    return this.tasksService.create(dto);
+  create(@Body() dto: CreateTaskDto, @CurrentUser() user: User) {
+    return this.tasksService.create(dto, user.id);
   }
 
   @Patch(':id')

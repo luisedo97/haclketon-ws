@@ -64,9 +64,13 @@ export interface Message {
 
 export interface Task {
   id: string;
-  contactId: string;
+  contactId: string | null;
+  assigneeUserId: string | null;
+  createdByUserId: string | null;
+  sourceProposalId: string | null;
   title: string;
   description: string | null;
+  category: string | null;
   status: TaskStatus;
   dueAt: string | null;
   createdAt: string;
@@ -92,6 +96,7 @@ export enum ProposalStatus {
 export interface TaskProposal {
   id: string;
   creatorUserId: string | null;
+  matchedAssigneeUserId: string | null;
   sourceMessageId: string;
   conversationId: string;
   titulo: string;
@@ -106,9 +111,19 @@ export interface TaskProposal {
   updatedAt: string;
 }
 
+export interface PublicUserLite {
+  id: string;
+  displayName: string;
+  role: 'ADMIN' | 'MEMBER';
+  phoneE164?: string | null;
+}
+
 export interface TaskProposalDetail extends TaskProposal {
   sourceMessage: Message;
   conversation: Pick<Conversation, 'id' | 'jid' | 'title'>;
+  matchedAssignee?: PublicUserLite | null;
+  creator?: Pick<PublicUserLite, 'id' | 'displayName' | 'role'> | null;
+  resultingTask?: { id: string; status: TaskStatus } | null;
 }
 
 export interface AnalysisTaskItem {

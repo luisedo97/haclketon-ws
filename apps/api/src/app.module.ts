@@ -10,6 +10,7 @@ import { EventsModule } from './modules/events/events.module';
 import { HealthModule } from './modules/health/health.module';
 import { MonitoredGroupsModule } from './modules/monitored-groups/monitored-groups.module';
 import { TasksModule } from './modules/tasks/tasks.module';
+import { UsersModule } from './modules/users/users.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -28,6 +29,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ContactsModule,
     ConversationsModule,
     TasksModule,
+    UsersModule,
     AiModule,
   ],
   providers: [

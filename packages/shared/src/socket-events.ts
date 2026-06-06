@@ -6,6 +6,8 @@ export const SOCKET_EVENTS = {
   MESSAGE: 'whatsapp:message',
   TASK_UPDATED: 'task:updated',
   PROPOSAL_CREATED: 'proposal:created',
+  PROPOSAL_APPROVED: 'proposal:approved',
+  PROPOSAL_DISCARDED: 'proposal:discarded',
 } as const;
 
 export interface QrEventPayload {
@@ -34,4 +36,16 @@ export interface ProposalCreatedEventPayload {
   conversationId: string;
   categoria: string;
   confianza: number;
+  creatorUserId: string | null;
+}
+
+export interface ProposalApprovedEventPayload {
+  proposalId: string;
+  creatorUserId: string | null;
+  taskId: string;
+}
+
+export interface ProposalDiscardedEventPayload {
+  proposalId: string;
+  creatorUserId: string | null;
 }

@@ -29,8 +29,13 @@ export class CreateContactDto {
 }
 
 export class CreateTaskDto {
+  @IsOptional()
   @IsString()
-  contactId!: string;
+  contactId?: string;
+
+  @IsOptional()
+  @IsString()
+  assigneeUserId?: string;
 
   @IsString()
   @MinLength(1)
@@ -41,6 +46,11 @@ export class CreateTaskDto {
   @IsString()
   @MaxLength(2000)
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  category?: string;
 
   @IsOptional()
   @IsString()
@@ -65,7 +75,16 @@ export class UpdateTaskDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(50)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  assigneeUserId?: string | null;
 
   @IsOptional()
   dueAt?: string | null;

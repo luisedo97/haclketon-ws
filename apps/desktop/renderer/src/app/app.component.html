@@ -5,10 +5,13 @@
       <p>Vincula WhatsApp, selecciona un fragmento de chat y analiza tareas</p>
     </div>
     <div class="header-actions">
-      @if (viewMode() === 'workspace') {
+      @if (viewMode() === 'workspace' || viewMode() === 'inbox') {
         <button class="btn secondary" (click)="backToDevices()">Dispositivos</button>
       }
       @if (viewMode() !== 'auth') {
+        <button class="btn primary" (click)="openInbox()">
+          Bandeja ({{ inboxCount() }})
+        </button>
         <button class="btn secondary" (click)="loadDevices()">Actualizar</button>
         <button class="btn ghost" (click)="toggleAccountPanel()">
           {{ currentUser()?.displayName ?? 'Cuenta' }}
@@ -195,6 +198,175 @@
         }
       </section>
     }
+  } @else if (viewMode() === 'inbox') {
+    <div class="inbox-layout">
+      <aside class="inbox-list">
+        <div class="panel-header">
+          <h3>Bandeja ({{ inboxProposals().length }})</h3>
+          <button class="btn ghost" (click)="loadInbox()">↻</button>
+        </div>
+
+        @if (inboxLoading()) {
+          <p class="muted small">Cargando...</p>
+        } @else if (inboxProposals().length === 0) {
+          <p class="muted small">
+            No tenés propuestas pendientes. Las nuevas aparecen acá cuando el
+            bot detecta una tarea en los mensajes que enviaste.
+          </p>
+        } @else {
+          <ul class="proposal-list">
+            @for (p of inboxProposals(); track p.id) {
+              <li>
+                <button
+                  type="button"
+                  class="proposal-item"
+                  [class.active]="selectedProposalId() === p.id"
+                  (click)="selectProposal(p)"
+                >
+                  <strong>{{ p.titulo }}</strong>
+                  <span class="proposal-meta">
+                    <span
+                      class="confidence-pill"
+                      [attr.data-level]="confidenceBucket(p.confianza)"
+                    >
+                      {{ (p.confianza * 100).toFixed(0) }}%
+                    </span>
+                    <span class="muted small">{{ p.categoria }}</span>
+                  </span>
+                  <span class="muted small">{{ formatTime(p.createdAt) }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        }
+      </aside>
+
+      <main class="inbox-editor">
+        @if (!proposalDraft() || !selectedProposalId()) {
+          <div class="empty-state">
+            <h2>Seleccioná una propuesta</h2>
+            <p class="muted">
+              Revisá los campos detectados por la IA, editá lo que haga falta
+              y aprobá para mandarla al tablero compartido.
+            </p>
+          </div>
+        } @else {
+          @let draft = proposalDraft()!;
+          @let selected = selectedProposal();
+          <form class="proposal-form" (ngSubmit)="approveProposal()">
+            <label>
+              Título
+              <input
+                type="text"
+                [ngModel]="draft.titulo"
+                (ngModelChange)="updateDraft('titulo', $event)"
+                name="titulo"
+                maxlength="200"
+              />
+            </label>
+
+            <label>
+              Descripción
+              <textarea
+                [ngModel]="draft.descripcion"
+                (ngModelChange)="updateDraft('descripcion', $event)"
+                name="descripcion"
+                rows="3"
+              ></textarea>
+            </label>
+
+            <div class="row two-col">
+              <label>
+                Fecha límite
+                <input
+                  type="date"
+                  [ngModel]="draft.fechaLimite"
+                  (ngModelChange)="updateDraft('fechaLimite', $event)"
+                  name="fechaLimite"
+                />
+              </label>
+
+              <label>
+                Categoría
+                <select
+                  [ngModel]="draft.categoria"
+                  (ngModelChange)="updateDraft('categoria', $event)"
+                  name="categoria"
+                >
+                  @for (cat of CATEGORIES; track cat) {
+                    <option [value]="cat">{{ cat }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+
+            <label>
+              Responsable
+              <select
+                [ngModel]="draft.assigneeUserId"
+                (ngModelChange)="updateDraft('assigneeUserId', $event)"
+                name="assignee"
+              >
+                <option value="">— sin asignar —</option>
+                @for (u of users(); track u.id) {
+                  <option [value]="u.id">
+                    {{ u.displayName }}@if (u.phoneE164) { (+{{ u.phoneE164 }}) }
+                  </option>
+                }
+              </select>
+            </label>
+
+            @if (selected) {
+              <div class="proposal-source">
+                <h4>Mensaje original</h4>
+                <p class="muted small">
+                  De {{ selected.creator?.displayName ?? 'desconocido' }} ·
+                  Confianza
+                  <span
+                    class="confidence-pill"
+                    [attr.data-level]="confidenceBucket(selected.confianza)"
+                  >
+                    {{ (selected.confianza * 100).toFixed(0) }}%
+                  </span>
+                </p>
+                <blockquote>{{ selected.sourceMessage.text }}</blockquote>
+                @if (selected.responsableProbable) {
+                  <p class="muted small">
+                    IA sugirió responsable: <strong>{{ selected.responsableProbable }}</strong>
+                  </p>
+                }
+              </div>
+            }
+
+            <div class="proposal-actions">
+              <button
+                type="button"
+                class="btn secondary"
+                [disabled]="proposalSaving()"
+                (click)="saveDraft()"
+              >
+                Guardar borrador
+              </button>
+              <button
+                type="button"
+                class="btn ghost"
+                [disabled]="proposalSaving()"
+                (click)="discardProposal()"
+              >
+                Descartar
+              </button>
+              <button
+                type="submit"
+                class="btn primary"
+                [disabled]="proposalSaving()"
+              >
+                {{ proposalSaving() ? 'Procesando...' : 'Aprobar' }}
+              </button>
+            </div>
+          </form>
+        }
+      </main>
+    </div>
   } @else {
     <div class="workspace">
       <aside class="sidebar">
