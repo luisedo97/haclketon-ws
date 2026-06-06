@@ -66,6 +66,46 @@ export const AiAnalysisOutputSchema = z.object({
   tasks: z.array(AnalysisTaskItemSchema).default([]),
 });
 
+export const PROPOSAL_CATEGORIES = [
+  'logística',
+  'finanzas',
+  'voluntariado',
+  'comunicación',
+  'administración',
+  'otro',
+] as const;
+
+export const CategoriaSchema = z
+  .enum(PROPOSAL_CATEGORIES)
+  .catch('otro');
+
+export const ProposalStatusSchema = z.enum([
+  'PENDIENTE',
+  'APROBADA',
+  'DESCARTADA',
+  'RETENIDA',
+]);
+
+export const ProposalLlmOutputSchema = z.object({
+  es_tarea: z.boolean(),
+  confianza: z
+    .number()
+    .min(0)
+    .max(1)
+    .catch(0),
+  titulo: z.string().default(''),
+  descripcion: z.string().default(''),
+  responsable_probable: z
+    .union([z.string(), z.null()])
+    .optional()
+    .transform((value) => (value && value.trim() ? value.trim() : null)),
+  fecha_limite: z
+    .union([z.string(), z.null()])
+    .optional()
+    .transform((value) => (value && value.trim() ? value.trim() : null)),
+  categoria: CategoriaSchema,
+});
+
 export type CreateDeviceInput = z.infer<typeof CreateDeviceSchema>;
 export type CreateContactInput = z.infer<typeof CreateContactSchema>;
 export type CreateTaskInput = z.infer<typeof CreateTaskSchema>;
@@ -74,3 +114,6 @@ export type AnalyzeConversationRequestInput = z.infer<
   typeof AnalyzeConversationRequestSchema
 >;
 export type AiAnalysisOutput = z.infer<typeof AiAnalysisOutputSchema>;
+export type ProposalLlmOutput = z.infer<typeof ProposalLlmOutputSchema>;
+export type ProposalCategoria = (typeof PROPOSAL_CATEGORIES)[number];
+export type ProposalStatusValue = z.infer<typeof ProposalStatusSchema>;

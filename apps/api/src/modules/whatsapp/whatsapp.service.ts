@@ -22,6 +22,7 @@ import { CreateDeviceDto } from '../../common/dto';
 import { DeviceStatus as SharedDeviceStatus, parsePhoneFromJid } from '@ws-spy/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EventsGateway } from '../events/events.gateway';
+import { HeuristicsService } from '../ai/heuristics.service';
 
 interface ActiveSession {
   socket: WASocket;
@@ -41,6 +42,7 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly eventsGateway: EventsGateway,
+    private readonly heuristicsService: HeuristicsService,
   ) {
     this.sessionsPath =
       this.configService.get<string>('SESSIONS_PATH') ?? './sessions';
@@ -448,10 +450,39 @@ export class WhatsappService implements OnModuleInit, OnModuleDestroy {
           sentAt: savedMessage.sentAt.toISOString(),
         },
       });
+
+      await this.maybeEnqueueForAnalysis(savedMessage.id, text, jid);
     } catch (error) {
       this.logger.error(
         `Failed to persist message for device ${deviceId}: ${error instanceof Error ? error.message : error}`,
       );
+    }
+  }
+
+  private async maybeEnqueueForAnalysis(
+    messageId: string,
+    text: string | null,
+    jid: string,
+  ) {
+    const decision = this.heuristicsService.evaluate(text, jid);
+    if (!decision.enqueue) {
+      return;
+    }
+    try {
+      await this.prisma.analysisQueue.create({
+        data: { messageId },
+      });
+    } catch (error) {
+      const isDuplicate =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code: string }).code === 'P2002';
+      if (!isDuplicate) {
+        this.logger.warn(
+          `No se pudo encolar mensaje ${messageId}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
   }
 

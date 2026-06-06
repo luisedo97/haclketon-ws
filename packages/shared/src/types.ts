@@ -82,6 +82,35 @@ export interface AiAnalysis {
   createdAt: string;
 }
 
+export enum ProposalStatus {
+  PENDIENTE = 'PENDIENTE',
+  APROBADA = 'APROBADA',
+  DESCARTADA = 'DESCARTADA',
+  RETENIDA = 'RETENIDA',
+}
+
+export interface TaskProposal {
+  id: string;
+  creatorUserId: string | null;
+  sourceMessageId: string;
+  conversationId: string;
+  titulo: string;
+  descripcion: string | null;
+  fechaLimite: string | null;
+  categoria: string;
+  responsableProbable: string | null;
+  confianza: number;
+  status: ProposalStatus;
+  modelUsed: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskProposalDetail extends TaskProposal {
+  sourceMessage: Message;
+  conversation: Pick<Conversation, 'id' | 'jid' | 'title'>;
+}
+
 export interface AnalysisTaskItem {
   title: string;
   description: string;

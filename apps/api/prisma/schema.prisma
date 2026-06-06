@@ -34,28 +34,31 @@ model Contact {
 }
 
 model Conversation {
-  id            String    @id @default(cuid())
+  id            String         @id @default(cuid())
   deviceId      String
   contactId     String?
   jid           String
   title         String?
   lastMessageAt DateTime?
   messages      Message[]
-  device        Device    @relation(fields: [deviceId], references: [id])
-  contact       Contact?  @relation(fields: [contactId], references: [id])
+  device        Device         @relation(fields: [deviceId], references: [id])
+  contact       Contact?       @relation(fields: [contactId], references: [id])
+  proposals     TaskProposal[]
 
   @@unique([deviceId, jid])
 }
 
 model Message {
-  id             String       @id @default(cuid())
+  id             String         @id @default(cuid())
   conversationId String
   externalId     String
   fromMe         Boolean
-  text           String?      @db.Text
+  text           String?        @db.Text
   mediaUrl       String?
   sentAt         DateTime
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation   @relation(fields: [conversationId], references: [id])
+  analysisQueue  AnalysisQueue?
+  proposal       TaskProposal?
 
   @@unique([conversationId, externalId])
 }
@@ -81,6 +84,42 @@ model AiAnalysis {
   createdAt DateTime @default(now())
 }
 
+model AnalysisQueue {
+  id          String      @id @default(cuid())
+  messageId   String      @unique
+  message     Message     @relation(fields: [messageId], references: [id])
+  status      QueueStatus @default(PENDING)
+  attempts    Int         @default(0)
+  lastError   String?     @db.Text
+  enqueuedAt  DateTime    @default(now())
+  processedAt DateTime?
+
+  @@index([status, enqueuedAt])
+}
+
+model TaskProposal {
+  id                  String         @id @default(cuid())
+  creatorUserId       String?
+  sourceMessageId     String         @unique
+  sourceMessage       Message        @relation(fields: [sourceMessageId], references: [id])
+  conversationId      String
+  conversation        Conversation   @relation(fields: [conversationId], references: [id])
+  titulo              String         @db.VarChar(500)
+  descripcion         String?        @db.Text
+  fechaLimite         DateTime?
+  categoria           String         @db.VarChar(50)
+  responsableProbable String?        @db.VarChar(200)
+  confianza           Float
+  status              ProposalStatus @default(PENDIENTE)
+  rawOutput           Json
+  modelUsed           String         @db.VarChar(100)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([conversationId])
+}
+
 enum DeviceStatus {
   DISCONNECTED
   CONNECTING
@@ -95,4 +134,19 @@ enum TaskStatus {
   BLOCKED
   DONE
   CANCELLED
+}
+
+enum QueueStatus {
+  PENDING
+  PROCESSING
+  DONE
+  SKIPPED
+  ERROR
+}
+
+enum ProposalStatus {
+  PENDIENTE
+  APROBADA
+  DESCARTADA
+  RETENIDA
 }
