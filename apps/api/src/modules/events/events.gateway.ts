@@ -9,6 +9,7 @@ import {
 import { Server, Socket } from 'socket.io';
 import {
   DeviceStatusEventPayload,
+  HistorySyncEventPayload,
   MessageEventPayload,
   ProposalApprovedEventPayload,
   ProposalCreatedEventPayload,
@@ -76,6 +77,10 @@ export class EventsGateway implements OnGatewayConnection {
 
   emitMessage(payload: MessageEventPayload) {
     this.server.emit(SOCKET_EVENTS.MESSAGE, payload);
+  }
+
+  emitHistorySync(payload: HistorySyncEventPayload) {
+    this.server.emit(SOCKET_EVENTS.HISTORY_SYNC, payload);
   }
 
   emitTaskUpdated(payload: TaskUpdatedEventPayload) {
