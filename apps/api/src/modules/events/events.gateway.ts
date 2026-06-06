@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import {
   DeviceStatusEventPayload,
   MessageEventPayload,
+  ProposalCreatedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
   TaskUpdatedEventPayload,
@@ -34,5 +35,9 @@ export class EventsGateway {
 
   emitTaskUpdated(payload: TaskUpdatedEventPayload) {
     this.server.emit(SOCKET_EVENTS.TASK_UPDATED, payload);
+  }
+
+  emitProposalCreated(payload: ProposalCreatedEventPayload) {
+    this.server.emit(SOCKET_EVENTS.PROPOSAL_CREATED, payload);
   }
 }
