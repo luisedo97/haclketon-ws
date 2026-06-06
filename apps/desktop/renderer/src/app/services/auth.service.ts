@@ -26,10 +26,19 @@ export interface LinkCodeResult {
   expiresAt: string;
 }
 
+function resolveBaseUrl(): string {
+  if (window.wsSpy?.apiUrl) {
+    return window.wsSpy.apiUrl;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost:3000';
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly baseUrl =
-    window.wsSpy?.apiUrl ?? 'http://localhost:3000';
+  private readonly baseUrl = resolveBaseUrl();
 
   readonly token = signal<string | null>(this.readToken());
   readonly currentUser = signal<PublicUser | null>(this.readUser());
