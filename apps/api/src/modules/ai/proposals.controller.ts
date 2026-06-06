@@ -8,7 +8,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ProposalStatus as PrismaProposalStatus, User } from '@prisma/client';
+import {
+  ProposalStatus as PrismaProposalStatus,
+  TaskStatus as PrismaTaskStatus,
+  User,
+} from '@prisma/client';
+import { TaskStatus as SharedTaskStatus } from '@ws-spy/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { EventsGateway } from '../events/events.gateway';
 import { ProposalsService, UpdateProposalDraftInput } from './proposals.service';
@@ -121,6 +126,11 @@ export class ProposalsController {
       proposalId: proposal.id,
       creatorUserId: proposal.creatorUserId,
       taskId: task.id,
+    });
+    this.eventsGateway.emitTaskCreated({
+      taskId: task.id,
+      assigneeUserId: task.assigneeUserId,
+      status: (task.status ?? PrismaTaskStatus.PENDING) as SharedTaskStatus,
     });
     return { proposal, task };
   }

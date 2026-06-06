@@ -8,6 +8,8 @@ import {
   ProposalDiscardedEventPayload,
   QrEventPayload,
   SOCKET_EVENTS,
+  TaskCreatedEventPayload,
+  TaskUpdatedEventPayload,
 } from '@ws-spy/shared';
 import { Subject } from 'rxjs';
 
@@ -21,6 +23,8 @@ export class SocketService implements OnDestroy {
   readonly proposalCreated$ = new Subject<ProposalCreatedEventPayload>();
   readonly proposalApproved$ = new Subject<ProposalApprovedEventPayload>();
   readonly proposalDiscarded$ = new Subject<ProposalDiscardedEventPayload>();
+  readonly taskCreated$ = new Subject<TaskCreatedEventPayload>();
+  readonly taskUpdated$ = new Subject<TaskUpdatedEventPayload>();
 
   connect(apiUrl: string, token: string | null) {
     if (this.socket?.connected) {
@@ -70,6 +74,20 @@ export class SocketService implements OnDestroy {
       SOCKET_EVENTS.PROPOSAL_DISCARDED,
       (payload: ProposalDiscardedEventPayload) => {
         this.proposalDiscarded$.next(payload);
+      },
+    );
+
+    this.socket.on(
+      SOCKET_EVENTS.TASK_CREATED,
+      (payload: TaskCreatedEventPayload) => {
+        this.taskCreated$.next(payload);
+      },
+    );
+
+    this.socket.on(
+      SOCKET_EVENTS.TASK_UPDATED,
+      (payload: TaskUpdatedEventPayload) => {
+        this.taskUpdated$.next(payload);
       },
     );
   }

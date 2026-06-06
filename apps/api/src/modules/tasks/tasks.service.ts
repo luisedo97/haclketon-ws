@@ -21,13 +21,25 @@ export class TasksService {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  findAll(filters: { contactId?: string; assigneeUserId?: string }) {
+  findAll(filters: {
+    contactId?: string;
+    assigneeUserId?: string;
+    status?: string;
+  }) {
+    const statuses = filters.status
+      ?.split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter((s): s is TaskStatus =>
+        (Object.values(TaskStatus) as string[]).includes(s),
+      );
+
     return this.prisma.task.findMany({
       where: {
         ...(filters.contactId ? { contactId: filters.contactId } : {}),
         ...(filters.assigneeUserId
           ? { assigneeUserId: filters.assigneeUserId }
           : {}),
+        ...(statuses && statuses.length > 0 ? { status: { in: statuses } } : {}),
       },
       include: TASK_INCLUDE,
       orderBy: { updatedAt: 'desc' },

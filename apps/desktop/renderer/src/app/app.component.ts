@@ -2,6 +2,10 @@ import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
+  CdkDragDrop,
+  DragDropModule,
+} from '@angular/cdk/drag-drop';
+import {
   AnalyzeResponseDto,
   ConversationDetail,
   ConversationListItem,
@@ -10,15 +14,21 @@ import {
   Message,
   PublicUserLite,
   TaskProposalDetail,
+  TaskStatus,
 } from '@ws-spy/shared';
 import { formatConversationTitle } from './utils/conversation.utils';
 import { Subscription } from 'rxjs';
-import { ApiService, ProposalPatch } from './services/api.service';
+import { ApiService, BoardTask, ProposalPatch } from './services/api.service';
 import { AuthService, LinkCodeResult, PublicUser } from './services/auth.service';
 import { SocketService } from './services/socket.service';
 
-type ViewMode = 'auth' | 'devices' | 'workspace' | 'inbox';
+type ViewMode = 'auth' | 'devices' | 'workspace' | 'inbox' | 'tablero';
 type AuthMode = 'login' | 'register';
+
+interface BoardColumn {
+  id: TaskStatus;
+  label: string;
+}
 
 interface ProposalDraft {
   titulo: string;
@@ -31,7 +41,7 @@ interface ProposalDraft {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DragDropModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -70,6 +80,21 @@ export class AppComponent implements OnInit, OnDestroy {
     'administración',
     'otro',
   ] as const;
+
+  readonly BOARD_COLUMNS: BoardColumn[] = [
+    { id: TaskStatus.PENDING, label: 'Pendiente' },
+    { id: TaskStatus.IN_PROGRESS, label: 'En curso' },
+    { id: TaskStatus.DONE, label: 'Hecha' },
+  ];
+  readonly TaskStatus = TaskStatus;
+
+  // Tablero state
+  boardTasks = signal<BoardTask[]>([]);
+  boardLoading = signal(false);
+  boardFilterCategories = signal<Set<string>>(new Set());
+  boardFilterAssigneeUserId = signal<string | null>(null);
+  boardFilterOnlyMine = signal(false);
+  activeMobileBoardColumn = signal<TaskStatus>(TaskStatus.PENDING);
 
   devices = signal<Device[]>([]);
   conversations = signal<ConversationListItem[]>([]);
@@ -112,6 +137,37 @@ export class AppComponent implements OnInit, OnDestroy {
     if (!id) return null;
     return this.inboxProposals().find((p) => p.id === id) ?? null;
   });
+
+  filteredBoardTasks = computed<BoardTask[]>(() => {
+    const tasks = this.boardTasks();
+    const cats = this.boardFilterCategories();
+    const assignee = this.boardFilterAssigneeUserId();
+    const mine = this.boardFilterOnlyMine();
+    const meId = this.currentUser()?.id ?? null;
+
+    return tasks.filter((t) => {
+      if (cats.size > 0 && !cats.has((t.category ?? '').toLowerCase())) {
+        return false;
+      }
+      if (assignee && t.assigneeUserId !== assignee) {
+        return false;
+      }
+      if (mine && (!meId || t.assigneeUserId !== meId)) {
+        return false;
+      }
+      return true;
+    });
+  });
+
+  boardCategories = computed<string[]>(() => {
+    const set = new Set<string>(this.CATEGORIES.map((c) => c.toLowerCase()));
+    for (const task of this.boardTasks()) {
+      if (task.category) set.add(task.category.toLowerCase());
+    }
+    return Array.from(set).sort();
+  });
+
+  readonly boardConnectedIds = this.BOARD_COLUMNS.map((c) => `col-${c.id}`);
 
   constructor(
     private readonly api: ApiService,
@@ -179,6 +235,30 @@ export class AppComponent implements OnInit, OnDestroy {
         } else {
           this.refreshInboxCount();
         }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.socket.taskCreated$.subscribe(() => {
+        if (this.viewMode() === 'tablero') {
+          this.loadBoard();
+        }
+      }),
+    );
+
+    this.subscriptions.add(
+      this.socket.taskUpdated$.subscribe((payload) => {
+        if (this.viewMode() !== 'tablero') return;
+        const known = this.boardTasks().some((t) => t.id === payload.taskId);
+        if (!known) {
+          this.loadBoard();
+          return;
+        }
+        this.boardTasks.update((list) =>
+          list.map((t) =>
+            t.id === payload.taskId ? { ...t, status: payload.status } : t,
+          ),
+        );
       }),
     );
 
@@ -285,6 +365,104 @@ export class AppComponent implements OnInit, OnDestroy {
     this.proposalDraft.set(null);
     this.error.set(null);
     this.loadInbox();
+  }
+
+  openTablero() {
+    this.viewMode.set('tablero');
+    this.error.set(null);
+    this.loadBoard();
+  }
+
+  loadBoard() {
+    this.boardLoading.set(true);
+    this.api.listBoardTasks().subscribe({
+      next: (tasks) => {
+        this.boardTasks.set(tasks);
+        this.boardLoading.set(false);
+      },
+      error: (err) => {
+        this.boardLoading.set(false);
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudieron cargar las tareas.'),
+        );
+      },
+    });
+  }
+
+  tasksForColumn(status: TaskStatus): BoardTask[] {
+    return this.filteredBoardTasks().filter((t) => t.status === status);
+  }
+
+  onDropTask(event: CdkDragDrop<TaskStatus>, targetStatus: TaskStatus) {
+    if (event.previousContainer === event.container) {
+      return;
+    }
+    const task = event.item.data as BoardTask;
+    if (!task || task.status === targetStatus) {
+      return;
+    }
+
+    const previousStatus = task.status;
+    this.boardTasks.update((list) =>
+      list.map((t) => (t.id === task.id ? { ...t, status: targetStatus } : t)),
+    );
+
+    this.api.updateTaskStatus(task.id, targetStatus).subscribe({
+      error: (err) => {
+        this.boardTasks.update((list) =>
+          list.map((t) =>
+            t.id === task.id ? { ...t, status: previousStatus } : t,
+          ),
+        );
+        this.error.set(
+          this.extractErrorMessage(err, 'No se pudo mover la tarea.'),
+        );
+      },
+    });
+  }
+
+  toggleBoardCategory(category: string) {
+    const key = category.toLowerCase();
+    const current = new Set(this.boardFilterCategories());
+    if (current.has(key)) {
+      current.delete(key);
+    } else {
+      current.add(key);
+    }
+    this.boardFilterCategories.set(current);
+  }
+
+  isBoardCategoryActive(category: string): boolean {
+    return this.boardFilterCategories().has(category.toLowerCase());
+  }
+
+  clearBoardFilters() {
+    this.boardFilterCategories.set(new Set());
+    this.boardFilterAssigneeUserId.set(null);
+    this.boardFilterOnlyMine.set(false);
+  }
+
+  taskStatusLabel(status: TaskStatus): string {
+    return (
+      this.BOARD_COLUMNS.find((c) => c.id === status)?.label ?? String(status)
+    );
+  }
+
+  taskAssigneeLabel(task: BoardTask): string {
+    if (task.assignee?.displayName) return task.assignee.displayName;
+    if (task.assigneeUserId) {
+      const match = this.users().find((u) => u.id === task.assigneeUserId);
+      if (match) return match.displayName;
+    }
+    return 'Sin asignar';
+  }
+
+  formatDueDate(iso: string | null): string | null {
+    if (!iso) return null;
+    return new Date(iso).toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+    });
   }
 
   loadInbox() {

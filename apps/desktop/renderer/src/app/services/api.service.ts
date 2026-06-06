@@ -8,9 +8,16 @@ import {
   CreateDeviceDto,
   Device,
   PublicUserLite,
+  Task,
   TaskProposalDetail,
+  TaskStatus,
 } from '@ws-spy/shared';
 import { Observable } from 'rxjs';
+
+export interface BoardTask extends Task {
+  contact: { id: string; displayName: string; phoneE164: string } | null;
+  assignee: { id: string; displayName: string; role: 'ADMIN' | 'MEMBER' } | null;
+}
 
 export interface ProposalPatch {
   titulo?: string;
@@ -117,5 +124,16 @@ export class ApiService {
 
   listUsers(): Observable<PublicUserLite[]> {
     return this.http.get<PublicUserLite[]>(`${this.baseUrl}/users`);
+  }
+
+  listBoardTasks(): Observable<BoardTask[]> {
+    const statuses = [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DONE].join(',');
+    return this.http.get<BoardTask[]>(
+      `${this.baseUrl}/tasks?status=${statuses}`,
+    );
+  }
+
+  updateTaskStatus(id: string, status: TaskStatus): Observable<BoardTask> {
+    return this.http.patch<BoardTask>(`${this.baseUrl}/tasks/${id}`, { status });
   }
 }
