@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id            String         @id @default(cuid())
+  label         String
+  phoneE164     String?
+  status        DeviceStatus   @default(DISCONNECTED)
+  sessionPath   String         @unique
+  createdAt     DateTime       @default(now())
+  contacts      Contact[]
+  conversations Conversation[]
+}
+
+model Contact {
+  id            String         @id @default(cuid())
+  deviceId      String?
+  device        Device?        @relation(fields: [deviceId], references: [id])
+  phoneE164     String
+  displayName   String
+  pushName      String?
+  notes         String?        @db.Text
+  isManual      Boolean        @default(false)
+  tasks         Task[]
+  conversations Conversation[]
+
+  @@unique([deviceId, phoneE164])
+}
+
+model Conversation {
+  id            String    @id @default(cuid())
+  deviceId      String
+  contactId     String?
+  jid           String
+  title         String?
+  lastMessageAt DateTime?
+  messages      Message[]
+  device        Device    @relation(fields: [deviceId], references: [id])
+  contact       Contact?  @relation(fields: [contactId], references: [id])
+
+  @@unique([deviceId, jid])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  externalId     String
+  fromMe         Boolean
+  text           String?      @db.Text
+  mediaUrl       String?
+  sentAt         DateTime
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@unique([conversationId, externalId])
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  contactId   String
+  title       String
+  description String?    @db.Text
+  status      TaskStatus @default(PENDING)
+  dueAt       DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  contact     Contact    @relation(fields: [contactId], references: [id])
+}
+
+model AiAnalysis {
+  id        String   @id @default(cuid())
+  scope     String
+  refId     String
+  model     String
+  output    Json
+  createdAt DateTime @default(now())
+}
+
+enum DeviceStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_READY
+  CONNECTED
+  ERROR
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+}

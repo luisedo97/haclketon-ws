@@ -1,0 +1,13 @@
+appId: com.wsspy.app
+productName: ws-spy
+directories:
+  output: release
+files:
+  - dist/**/*
+  - renderer/dist/**/*
+mac:
+  category: public.app-category.productivity
+win:
+  target: nsis
+linux:
+  target: AppImage

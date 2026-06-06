@@ -1,0 +1,25 @@
+{
+  "name": "ws-spy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop app for WhatsApp conversation tracking with AI analysis",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @ws-spy/api dev",
+    "dev:desktop": "pnpm --filter @ws-spy/desktop dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "compose:up": "docker compose up -d --build",
+    "compose:down": "docker compose down",
+    "compose:logs": "docker compose logs -f",
+    "db:generate": "pnpm --filter @ws-spy/api db:generate",
+    "db:migrate": "pnpm --filter @ws-spy/api db:migrate",
+    "db:studio": "pnpm --filter @ws-spy/api db:studio"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

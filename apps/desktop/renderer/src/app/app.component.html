@@ -1,0 +1,247 @@
+<div class="app-shell">
+  <header class="header">
+    <div>
+      <h1>ws-spy</h1>
+      <p>Vincula WhatsApp, selecciona un fragmento de chat y analiza tareas</p>
+    </div>
+    <div class="header-actions">
+      @if (viewMode() === 'workspace') {
+        <button class="btn secondary" (click)="backToDevices()">Dispositivos</button>
+      }
+      <button class="btn secondary" (click)="loadDevices()">Actualizar</button>
+    </div>
+  </header>
+
+  @if (error()) {
+    <div class="alert">{{ error() }}</div>
+  }
+
+  @if (viewMode() === 'devices') {
+    <section class="card">
+      <h2>Nuevo dispositivo</h2>
+      <div class="row">
+        <input
+          type="text"
+          [ngModel]="newDeviceLabel()"
+          (ngModelChange)="newDeviceLabel.set($event)"
+          placeholder="Nombre del dispositivo"
+        />
+        <button class="btn primary" [disabled]="loading()" (click)="createAndConnect()">
+          Vincular WhatsApp
+        </button>
+      </div>
+    </section>
+
+    @if (activeQrDeviceId(); as deviceId) {
+      @if (qrByDevice()[deviceId]; as qr) {
+        <section class="card qr-card">
+          <h2>Escanea el código QR</h2>
+          <p>Abre WhatsApp en tu teléfono y vincula el dispositivo.</p>
+          <img [src]="getQrUrl(qr)" alt="Código QR de WhatsApp" width="280" height="280" />
+        </section>
+      }
+    }
+
+    <section class="card">
+      <h2>Dispositivos ({{ devices().length }})</h2>
+
+      @if (loading() && devices().length === 0) {
+        <p class="muted">Cargando...</p>
+      } @else if (devices().length === 0) {
+        <p class="muted">No hay dispositivos vinculados todavía.</p>
+      } @else {
+        <ul class="device-list">
+          @for (device of devices(); track device.id) {
+            <li class="device-item">
+              <div>
+                <strong>{{ device.label }}</strong>
+                <span class="status" [class.connected]="device.status === 'CONNECTED'">
+                  {{ statusLabel(device.status) }}
+                </span>
+                @if (device.phoneE164) {
+                  <small>+{{ device.phoneE164 }}</small>
+                }
+              </div>
+              <div class="actions">
+                @if (device.status !== 'CONNECTED') {
+                  <button class="btn primary" (click)="connect(device.id)">Conectar</button>
+                } @else {
+                  <button class="btn primary" (click)="openWorkspace(device.id)">Ver chats</button>
+                  <button class="btn secondary" (click)="disconnect(device.id)">Desconectar</button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  } @else {
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="panel-block">
+          <h3>{{ selectedDevice()?.label }}</h3>
+          <p class="muted small">
+            {{ statusLabel(selectedDevice()?.status ?? DeviceStatus.DISCONNECTED) }}
+          </p>
+        </div>
+
+        <div class="panel-block">
+          <div class="panel-header">
+            <h3>Conversaciones</h3>
+            <button
+              class="btn ghost"
+              (click)="loadConversations(selectedDeviceId()!, true)"
+            >
+              ↻
+            </button>
+          </div>
+
+          @if (conversationsLoading()) {
+            <p class="muted small">Cargando conversaciones...</p>
+          } @else if (conversations().length === 0) {
+            <p class="muted small">
+              Aún no hay conversaciones guardadas para este número. Envía o recibe un mensaje en WhatsApp y pulsa ↻.
+            </p>
+          } @else {
+            <ul class="conversation-list">
+              @for (conversation of conversations(); track conversation.id) {
+                <li>
+                  <button
+                    type="button"
+                    class="conversation-item"
+                    [class.active]="selectedConversationId() === conversation.id"
+                    [attr.aria-label]="conversationTitle(conversation)"
+                    (click)="openConversation(conversation.id)"
+                  >
+                    <strong>{{ conversationTitle(conversation) }}</strong>
+                    <span class="preview">{{ previewText(conversation) }}</span>
+                    @if (conversation.lastMessageAt) {
+                      <span class="time">{{ formatTime(conversation.lastMessageAt) }}</span>
+                    }
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </aside>
+
+      <main class="chat-panel">
+        @if (!activeConversation()) {
+          <div class="empty-state">
+            <h2>Selecciona una conversación</h2>
+            <p class="muted">Elige un chat del panel izquierdo para ver los mensajes.</p>
+          </div>
+        } @else {
+          <div class="chat-header">
+            <div>
+              <h2>{{ conversationTitle(activeConversation()!) }}</h2>
+              <p class="muted small">
+                Haz clic en el mensaje inicial y luego en el final para definir el rango a analizar.
+              </p>
+            </div>
+            <div class="chat-actions">
+              @if (selectionReady()) {
+                <button class="btn secondary" (click)="clearSelection()">Limpiar selección</button>
+                <button
+                  class="btn primary"
+                  [disabled]="analyzing()"
+                  (click)="analyzeSelection()"
+                >
+                  {{ analyzing() ? 'Analizando...' : 'Analizar fragmento' }}
+                </button>
+              }
+            </div>
+          </div>
+
+          <div class="messages">
+            @if (loading()) {
+              <p class="muted messages-loading">Cargando mensajes...</p>
+            } @else if (activeConversation()!.messages.length === 0) {
+              <p class="muted messages-loading">
+                Esta conversación aún no tiene mensajes guardados.
+              </p>
+            } @else {
+              @for (message of activeConversation()!.messages; track message.id) {
+              <button
+                type="button"
+                class="message"
+                [class.from-me]="message.fromMe"
+                [class.selected]="isMessageSelected(message)"
+                [class.endpoint-from]="isSelectionEndpoint(message) === 'from'"
+                [class.endpoint-to]="isSelectionEndpoint(message) === 'to'"
+                (click)="onMessageClick(message)"
+              >
+                <div class="message-meta">
+                  <span>{{ message.fromMe ? 'Yo' : conversationTitle(activeConversation()!) }}</span>
+                  <span>{{ formatMessageTime(message.sentAt) }}</span>
+                </div>
+                <p>{{ message.text || '(mensaje sin texto)' }}</p>
+              </button>
+              }
+            }
+          </div>
+        }
+      </main>
+
+      <aside class="analysis-panel">
+        <h3>Análisis de tareas</h3>
+
+        @if (!selectionReady()) {
+          <p class="muted">
+            Selecciona un rango de mensajes en la conversación para generar el análisis.
+          </p>
+        } @else if (analyzing()) {
+          <p class="muted">Consultando Ollama...</p>
+        } @else if (!analysisResult()) {
+          <p class="muted">
+            Pulsa <strong>Analizar fragmento</strong> para identificar tareas de
+            {{ conversationTitle(activeConversation()!) }} según lo hablado.
+          </p>
+        } @else {
+          <div class="analysis-result">
+            <div class="analysis-meta">
+              <span>{{ analysisResult()!.contactName }}</span>
+              <span>{{ analysisResult()!.messageCount }} mensajes</span>
+            </div>
+
+            <section class="analysis-section">
+              <h4>Resumen</h4>
+              <p>{{ analysisResult()!.summary }}</p>
+            </section>
+
+            @if (analysisResult()!.hasTasks) {
+              <section class="analysis-section">
+                <h4>Tareas identificadas</h4>
+                <ul class="task-list">
+                  @for (task of analysisResult()!.tasks; track task.title) {
+                    <li class="task-item">
+                      <div class="task-header">
+                        <strong>{{ task.title }}</strong>
+                        <span class="priority" [attr.data-priority]="task.priority">
+                          {{ priorityLabel(task.priority) }}
+                        </span>
+                      </div>
+                      <p>{{ task.description }}</p>
+                      @if (task.dueHint) {
+                        <small>Plazo: {{ task.dueHint }}</small>
+                      }
+                    </li>
+                  }
+                </ul>
+              </section>
+            } @else {
+              <section class="analysis-section no-tasks">
+                <h4>Sin tareas pendientes</h4>
+                <p>
+                  No se identificaron acciones concretas para
+                  {{ analysisResult()!.contactName }} en este fragmento.
+                </p>
+              </section>
+            }
+          </div>
+        }
+      </aside>
+    </div>
+  }
+</div>

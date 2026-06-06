@@ -1,0 +1,46 @@
+{
+  "name": "@ws-spy/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"pnpm renderer:dev\" \"pnpm electron:dev\"",
+    "build": "pnpm renderer:build && pnpm electron:build",
+    "electron:dev": "wait-on http://localhost:4200 && tsc -p electron/tsconfig.json && electron .",
+    "electron:build": "tsc -p electron/tsconfig.json",
+    "renderer:dev": "pnpm --dir renderer start",
+    "renderer:build": "pnpm --dir renderer build",
+    "typecheck": "tsc -p electron/tsconfig.json --noEmit",
+    "lint": "echo 'No lint configured for desktop'"
+  },
+  "dependencies": {
+    "@ws-spy/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.wsspy.app",
+    "productName": "ws-spy",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/dist/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

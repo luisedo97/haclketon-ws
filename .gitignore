@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Electron
+apps/desktop/dist/
+apps/desktop/release/
+
+# WhatsApp sessions
+sessions/
+/data/sessions/
+
+# Prisma
+apps/api/prisma/migrations/
+
+# Angular
+apps/desktop/renderer/.angular/
+apps/desktop/renderer/dist/
+
+# Docker
+docker/mysql/data/
+
+# Test coverage
+coverage/
