@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { AiModule } from './modules/ai/ai.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { ContactsModule } from './modules/contacts/contacts.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { EventsModule } from './modules/events/events.module';
@@ -18,6 +21,7 @@ import { PrismaModule } from './prisma/prisma.module';
     }),
     PrismaModule,
     EventsModule,
+    AuthModule,
     HealthModule,
     MonitoredGroupsModule,
     WhatsappModule,
@@ -25,6 +29,12 @@ import { PrismaModule } from './prisma/prisma.module';
     ConversationsModule,
     TasksModule,
     AiModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
   ],
 })
 export class AppModule {}

@@ -5,11 +5,17 @@ import {
   Get,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { CreateDeviceDto } from '../../common/dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { WhatsappService } from './whatsapp.service';
 
 @Controller('devices')
+@UseGuards(RolesGuard)
+@Roles(Role.ADMIN)
 export class WhatsappController {
   constructor(private readonly whatsappService: WhatsappService) {}
 

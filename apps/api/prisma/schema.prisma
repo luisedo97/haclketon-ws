@@ -101,6 +101,7 @@ model AnalysisQueue {
 model TaskProposal {
   id                  String         @id @default(cuid())
   creatorUserId       String?
+  creator             User?          @relation(fields: [creatorUserId], references: [id])
   sourceMessageId     String         @unique
   sourceMessage       Message        @relation(fields: [sourceMessageId], references: [id])
   conversationId      String
@@ -159,8 +160,41 @@ model MonitoredGroup {
   jid             String
   title           String?
   addedByUserId   String?
+  addedBy         User?    @relation("AddedBy", fields: [addedByUserId], references: [id])
   addedAt         DateTime @default(now())
 
   @@unique([deviceId, jid])
   @@index([deviceId])
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  passwordHash    String
+  displayName     String
+  role            Role             @default(MEMBER)
+  phoneE164       String?          @unique
+  createdAt       DateTime         @default(now())
+  linkCodes       LinkCode[]
+  proposalsCreated TaskProposal[]
+  groupsAdded     MonitoredGroup[] @relation("AddedBy")
+}
+
+model LinkCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  consumedJid String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt, consumedAt])
+}
+
+enum Role {
+  ADMIN
+  MEMBER
 }

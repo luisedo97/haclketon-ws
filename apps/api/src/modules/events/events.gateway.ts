@@ -1,8 +1,12 @@
+import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import {
+  OnGatewayConnection,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import {
   DeviceStatusEventPayload,
   MessageEventPayload,
@@ -17,9 +21,47 @@ import {
     origin: '*',
   },
 })
-export class EventsGateway {
+export class EventsGateway implements OnGatewayConnection {
   @WebSocketServer()
   server!: Server;
+
+  private readonly logger = new Logger(EventsGateway.name);
+
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  handleConnection(socket: Socket) {
+    const token =
+      (socket.handshake.auth?.token as string | undefined) ??
+      this.extractBearer(socket.handshake.headers.authorization);
+
+    if (!token) {
+      this.logger.warn(`Socket ${socket.id} rechazado: sin token`);
+      socket.disconnect(true);
+      return;
+    }
+
+    try {
+      this.jwtService.verify(token, {
+        secret:
+          this.configService.get<string>('JWT_SECRET') ??
+          'dev-secret-please-change',
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Socket ${socket.id} rechazado: token inválido (${error instanceof Error ? error.message : error})`,
+      );
+      socket.disconnect(true);
+    }
+  }
+
+  private extractBearer(header?: string): string | undefined {
+    if (!header) return undefined;
+    const [type, value] = header.split(' ');
+    return type?.toLowerCase() === 'bearer' ? value : undefined;
+  }
 
   emitQr(payload: QrEventPayload) {
     this.server.emit(SOCKET_EVENTS.QR, payload);

@@ -8,73 +8,193 @@
       @if (viewMode() === 'workspace') {
         <button class="btn secondary" (click)="backToDevices()">Dispositivos</button>
       }
-      <button class="btn secondary" (click)="loadDevices()">Actualizar</button>
+      @if (viewMode() !== 'auth') {
+        <button class="btn secondary" (click)="loadDevices()">Actualizar</button>
+        <button class="btn ghost" (click)="toggleAccountPanel()">
+          {{ currentUser()?.displayName ?? 'Cuenta' }}
+        </button>
+      }
     </div>
   </header>
+
+  @if (viewMode() !== 'auth' && showAccountPanel()) {
+    <section class="card account-panel">
+      <div class="account-header">
+        <div>
+          <strong>{{ currentUser()?.displayName }}</strong>
+          <span class="muted small"> · {{ currentUser()?.email }} · {{ currentUser()?.role }}</span>
+        </div>
+        <button class="btn secondary" (click)="logout()">Cerrar sesión</button>
+      </div>
+
+      <div class="account-link">
+        @if (currentUser()?.phoneE164) {
+          <p class="muted small">
+            Número vinculado: <strong>+{{ currentUser()?.phoneE164 }}</strong>
+          </p>
+        } @else {
+          <p class="muted small">
+            Vinculá tu número de WhatsApp para que el sistema reconozca tus mensajes.
+          </p>
+        }
+        <button
+          class="btn primary"
+          [disabled]="linkCodeLoading()"
+          (click)="requestLinkCode()"
+        >
+          {{ linkCodeLoading() ? 'Generando...' : 'Generar código de vinculación' }}
+        </button>
+
+        @if (linkCode(); as lc) {
+          <div class="link-code-display">
+            <div class="link-code-number">{{ lc.code }}</div>
+            <p class="muted small">
+              Enviá este código como mensaje desde <strong>tu</strong> WhatsApp
+              a cualquier grupo monitoreado por el bot. Vence en
+              <strong>{{ formatRemaining(linkCodeRemainingSec()) }}</strong>.
+            </p>
+          </div>
+        }
+      </div>
+    </section>
+  }
 
   @if (error()) {
     <div class="alert">{{ error() }}</div>
   }
 
-  @if (viewMode() === 'devices') {
-    <section class="card">
-      <h2>Nuevo dispositivo</h2>
-      <div class="row">
-        <input
-          type="text"
-          [ngModel]="newDeviceLabel()"
-          (ngModelChange)="newDeviceLabel.set($event)"
-          placeholder="Nombre del dispositivo"
-        />
-        <button class="btn primary" [disabled]="loading()" (click)="createAndConnect()">
-          Vincular WhatsApp
+  @if (viewMode() === 'auth') {
+    <section class="card auth-card">
+      <h2>{{ authMode() === 'login' ? 'Iniciar sesión' : 'Crear cuenta' }}</h2>
+      <p class="muted small">
+        @if (authMode() === 'login') {
+          ¿No tenés cuenta?
+          <button type="button" class="btn ghost inline" (click)="toggleAuthMode()">Registrate</button>
+        } @else {
+          ¿Ya tenés cuenta?
+          <button type="button" class="btn ghost inline" (click)="toggleAuthMode()">Ingresá</button>
+        }
+      </p>
+
+      <form (ngSubmit)="submitAuth()" class="auth-form">
+        @if (authMode() === 'register') {
+          <label>
+            Nombre
+            <input
+              type="text"
+              [ngModel]="authDisplayName()"
+              (ngModelChange)="authDisplayName.set($event)"
+              name="displayName"
+              placeholder="Tomás"
+              autocomplete="name"
+            />
+          </label>
+        }
+        <label>
+          Email
+          <input
+            type="email"
+            [ngModel]="authEmail()"
+            (ngModelChange)="authEmail.set($event)"
+            name="email"
+            placeholder="tu@email.com"
+            autocomplete="email"
+            required
+          />
+        </label>
+        <label>
+          Contraseña
+          <input
+            type="password"
+            [ngModel]="authPassword()"
+            (ngModelChange)="authPassword.set($event)"
+            name="password"
+            placeholder="••••••••"
+            autocomplete="{{ authMode() === 'login' ? 'current-password' : 'new-password' }}"
+            required
+          />
+        </label>
+
+        @if (authError()) {
+          <div class="alert inline">{{ authError() }}</div>
+        }
+
+        <button class="btn primary" type="submit" [disabled]="authSubmitting()">
+          {{ authSubmitting() ? 'Procesando...' : (authMode() === 'login' ? 'Ingresar' : 'Registrarme') }}
         </button>
-      </div>
+      </form>
     </section>
+  } @else if (viewMode() === 'devices') {
+    @if (!isAdmin()) {
+      <section class="card">
+        <h2>Esperando al admin</h2>
+        <p class="muted">
+          Tu cuenta es de miembro. Un administrador debe vincular un dispositivo de WhatsApp
+          y agregar grupos a la lista de monitoreo. Mientras tanto, podés vincular tu número desde
+          el panel <strong>Cuenta</strong> arriba para que el sistema te identifique cuando aparezca
+          una tarea tuya.
+        </p>
+      </section>
+    } @else {
+      <section class="card">
+        <h2>Nuevo dispositivo</h2>
+        <div class="row">
+          <input
+            type="text"
+            [ngModel]="newDeviceLabel()"
+            (ngModelChange)="newDeviceLabel.set($event)"
+            placeholder="Nombre del dispositivo"
+          />
+          <button class="btn primary" [disabled]="loading()" (click)="createAndConnect()">
+            Vincular WhatsApp
+          </button>
+        </div>
+      </section>
 
-    @if (activeQrDeviceId(); as deviceId) {
-      @if (qrByDevice()[deviceId]; as qr) {
-        <section class="card qr-card">
-          <h2>Escanea el código QR</h2>
-          <p>Abre WhatsApp en tu teléfono y vincula el dispositivo.</p>
-          <img [src]="getQrUrl(qr)" alt="Código QR de WhatsApp" width="280" height="280" />
-        </section>
+      @if (activeQrDeviceId(); as deviceId) {
+        @if (qrByDevice()[deviceId]; as qr) {
+          <section class="card qr-card">
+            <h2>Escanea el código QR</h2>
+            <p>Abre WhatsApp en tu teléfono y vincula el dispositivo.</p>
+            <img [src]="getQrUrl(qr)" alt="Código QR de WhatsApp" width="280" height="280" />
+          </section>
+        }
       }
+
+      <section class="card">
+        <h2>Dispositivos ({{ devices().length }})</h2>
+
+        @if (loading() && devices().length === 0) {
+          <p class="muted">Cargando...</p>
+        } @else if (devices().length === 0) {
+          <p class="muted">No hay dispositivos vinculados todavía.</p>
+        } @else {
+          <ul class="device-list">
+            @for (device of devices(); track device.id) {
+              <li class="device-item">
+                <div>
+                  <strong>{{ device.label }}</strong>
+                  <span class="status" [class.connected]="device.status === 'CONNECTED'">
+                    {{ statusLabel(device.status) }}
+                  </span>
+                  @if (device.phoneE164) {
+                    <small>+{{ device.phoneE164 }}</small>
+                  }
+                </div>
+                <div class="actions">
+                  @if (device.status !== 'CONNECTED') {
+                    <button class="btn primary" (click)="connect(device.id)">Conectar</button>
+                  } @else {
+                    <button class="btn primary" (click)="openWorkspace(device.id)">Ver chats</button>
+                    <button class="btn secondary" (click)="disconnect(device.id)">Desconectar</button>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
     }
-
-    <section class="card">
-      <h2>Dispositivos ({{ devices().length }})</h2>
-
-      @if (loading() && devices().length === 0) {
-        <p class="muted">Cargando...</p>
-      } @else if (devices().length === 0) {
-        <p class="muted">No hay dispositivos vinculados todavía.</p>
-      } @else {
-        <ul class="device-list">
-          @for (device of devices(); track device.id) {
-            <li class="device-item">
-              <div>
-                <strong>{{ device.label }}</strong>
-                <span class="status" [class.connected]="device.status === 'CONNECTED'">
-                  {{ statusLabel(device.status) }}
-                </span>
-                @if (device.phoneE164) {
-                  <small>+{{ device.phoneE164 }}</small>
-                }
-              </div>
-              <div class="actions">
-                @if (device.status !== 'CONNECTED') {
-                  <button class="btn primary" (click)="connect(device.id)">Conectar</button>
-                } @else {
-                  <button class="btn primary" (click)="openWorkspace(device.id)">Ver chats</button>
-                  <button class="btn secondary" (click)="disconnect(device.id)">Desconectar</button>
-                }
-              </div>
-            </li>
-          }
-        </ul>
-      }
-    </section>
   } @else {
     <div class="workspace">
       <aside class="sidebar">
