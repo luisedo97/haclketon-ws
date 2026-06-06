@@ -40,4 +40,4 @@ WORKDIR /app/apps/api
 ENV WEB_ROOT=/app/apps/api/web
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/main.js"]
